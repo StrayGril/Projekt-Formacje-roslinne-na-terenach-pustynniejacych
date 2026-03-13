@@ -1,59 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from pipeline.model_core import v_stac, u_stac, jacobian, is_stable
-
-# --------------------------------------------------
-# Punkt jednorodny
-# --------------------------------------------------
-
-def homogeneous_state(a: float, m: float):
-    """
-    Zwraca jednorodny punkt stacjonarny (u*, v*)
-
-    Parametry
-    a : float
-        Parametr zasobu wody.
-    m : float
-        Parametr śmiertelności.
-
-    Zwraca
-        Jednorodny stan równowagi modelu reakcji (u*, v*).
-    """
-    vs = v_stac(a, m, mode  = 1, add_delta = True)
-    us = u_stac(vs, m)
-    return us, vs
-
-
-# --------------------------------------------------
-# Stabilność bez dyfuzji (ODE)
-# --------------------------------------------------
-
-def check_ode_stability(a: float, m: float):
-    """
-    Sprawdza stabilność układu reakcyjnego (bez dyfuzji).
-
-    Parametry
-    a : float
-        Parametr zasobu wody.
-    m : float
-        Parametr śmiertelności.
-
-    Zwraca
-        stable : bool
-            Czy punkt jednorodny jest stabilny.
-        J : ndarray (2x2)
-            Jacobian w punkcie (u*, v*).
-    """
-    us, vs = homogeneous_state(a, m)
-    J = jacobian(us, vs, m)
-
-    return is_stable(J), J
-
+from pipeline.model_core import (
+    homogeneous_state,
+    check_ode_stability
+)
 
 # --------------------------------------------------
 # Relacja dyspersji
 # --------------------------------------------------
-
 def dispersion(J: np.ndarray, d1: float, d2: float,
             k_min: float = 0, k_max: float = 5, n_k: int = 1000):
     """
@@ -94,11 +48,9 @@ def dispersion(J: np.ndarray, d1: float, d2: float,
 
     return k_vals, lambda_max
 
-
 # --------------------------------------------------
 # Pasmo Turinga
 # --------------------------------------------------
-
 def turing_band(k_vals: np.ndarray, lambda_max: np.ndarray):
     """
     Wyznacza punkty niestabilne k (pasmo Turinga).
@@ -128,11 +80,9 @@ def turing_band(k_vals: np.ndarray, lambda_max: np.ndarray):
         "k_dom": k_vals[np.argmax(lambda_max)]
     }
 
-
 # --------------------------------------------------
 # Analiza Turinga
 # --------------------------------------------------
-
 def turing_analysis(a: float, m: float, d1: float, d2: float,
                     k_min: float = 0, k_max: float = 5, n_k: int = 1000):
     """
@@ -182,11 +132,9 @@ def turing_analysis(a: float, m: float, d1: float, d2: float,
         "band": band
     }
 
-
 # --------------------------------------------------
 # Wykres
 # --------------------------------------------------
-
 def plot_dispersion(k_vals: np.ndarray, lambda_max: np.ndarray, band: dict):
     """
     Rysuje relację dyspersji λ(k) z zaznaczonym pasmem Turinga.
@@ -225,4 +173,3 @@ def plot_dispersion(k_vals: np.ndarray, lambda_max: np.ndarray, band: dict):
     plt.legend()
     plt.tight_layout()
     plt.show()
-
