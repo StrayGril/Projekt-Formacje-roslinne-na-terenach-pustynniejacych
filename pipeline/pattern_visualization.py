@@ -40,7 +40,7 @@ def initial_conditions(Nx, Ny, a, m, brzeg, noise=1e-3):
 # --------------------------------------------------
 # Symulacja wzorów
 # --------------------------------------------------
-def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T):
+def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, do_modelu=False):
     """
         Przeprowadza symulację o podanych parametrach na T powtórzeń.
         Parametry:
@@ -57,32 +57,16 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T):
 
     u_curr, v_curr = u_0.copy(), v_0.copy()
 
-    u_t1 = None
-    v_t1 = None
-    u_tmid = None
-    v_tmid = None
-
-    for i in range(T):
+    for t in range(T):
         u_curr, v_curr = step_reaction_diffusion(u_curr, v_curr, a, m, ht, lu_Au, lu_Av, brzeg)
 
-
-        if i == 1:
-            u_t1 = u_curr.copy()
-            v_t1 = v_curr.copy()
-
-        if i == int(T / 2):
-            u_tmid = u_curr.copy()
-            v_tmid = v_curr.copy()
-
+    if do_modelu is True:
+        return u_curr.reshape(Ny, Nx), v_curr.reshape(Ny, Nx)
 
     return {"X": X,
         "Y": Y,
         "u0": u_0,
         "v0": v_0,
-        "u1": u_t1,
-        "v1": v_t1,
-        "umid": u_tmid,
-        "vmid": v_tmid,
         "uT": u_curr,
         "vT": v_curr}
 
@@ -93,30 +77,29 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T):
 # --------------------------------------------------
 def plot_patterns(sim_data, wykres="uv"):
     """
-        Rysuje wykresy symulacji w chwilach: 0, 1, T/2, T.
+        Rysuje wykresy symulacji w chwilach: 0, T na podstawie słownika wymiarów i spłaszczonych macierzy z symulacji.
 
         Parametry:
         sim_data - wynik funkcji simulate_patterns
         wykres : string "u", "v", "uv", które wykresy pokazać
     """
+
     X, Y = sim_data["X"], sim_data["Y"]
     Ny, Nx = X.shape
 
     states = {
         "0": (sim_data["u0"], sim_data["v0"]),
-        "1": (sim_data["u1"], sim_data["v1"]),
-        "T/2": (sim_data["umid"], sim_data["vmid"]),
         "T": (sim_data["uT"], sim_data["vT"])}
 
     if "u" in wykres: # wykres wody
 
-        fig, axs = plt.subplots(2,2, figsize=(10,8))
+        fig, axs = plt.subplots(1,2, figsize=(10,4))
         dane = [states[t][0] for t in states]
         levels = np.linspace(min(d.min() for d in dane), max(d.max() for d in dane), 50)
 
         for ax, (t, (u, _)) in zip(axs.flat, states.items()):
             im = ax.contourf(X, Y, u.reshape(Ny, Nx), levels=levels, cmap="Spectral")
-            ax.set_title(f"u(t={t})")
+            ax.set_title(f"Woda u(t={t})")
 
         fig.colorbar(im, ax=axs)
         plt.show()
@@ -124,28 +107,44 @@ def plot_patterns(sim_data, wykres="uv"):
 
     if "v" in wykres: # wykres biomasy
 
-        fig, axs = plt.subplots(2,2, figsize=(10,8))
+        fig, axs = plt.subplots(1,2, figsize=(10,4))
         dane = [states[t][1] for t in states]
         levels = np.linspace(min(d.min() for d in dane), max(d.max() for d in dane), 50)
 
         for ax, (t, (_, v)) in zip(axs.flat, states.items()):
             im = ax.contourf(X, Y, v.reshape(Ny, Nx), levels=levels, cmap="RdYlGn")
-            ax.set_title(f"v(t={t})")
+            ax.set_title(f"Biomasa v(t={t})")
 
         fig.colorbar(im, ax=axs)
         plt.show()
 
 
-# ===============================================
-# Wychodza wzory!! dla np L, N = 20, 60, T=8000
-
-a, m, d1, d2 = 1, 0.45, 1, 0.02
-
-L, N = 20, 60
-
-wynik = simulate_patterns(a, m, d1, d2, L, L, N, N, T=8000)
-plot_patterns(wynik, wykres="uv")
 
 
-# DALEJ:
-# sprobowac dac w, n zamiast u, v i - czy zadziala dla wielowymiarowego
+
+def plot_matrix(M, plot_title="Wykres", show=True):
+    """
+    Rysuje wykres kwadratowej (niespłaszczonej) macierzy (np. u_T lub v_T)
+        plot_title="Wykres": mozna tu nadac wlasna nazwe
+        show=True: mozna False zeby zcustowizowac wyswietlanie samemu
+    """
+
+    Ny, Nx = M.shape
+    x = np.linspace(0, 1, Nx)
+    y = np.linspace(0, 1, Ny)
+    X, Y = np.meshgrid(x, y)
+
+    levels = np.linspace(M.min(), M.max(), 50)
+
+    plt.figure(figsize=(5, 4))
+    im = plt.contourf(X, Y, M, levels=levels, cmap="viridis")
+
+    plt.colorbar(im)
+    plt.title(plot_title)
+
+    if show is True:
+        plt.xlabel("x")
+        plt.ylabel("y")
+        plt.tight_layout()
+        plt.show()
+
