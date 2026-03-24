@@ -1,14 +1,27 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier, ExtraTreesClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neural_network import MLPClassifier
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.multiclass import OneVsRestClassifier
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 import joblib
+from imblearn.over_sampling import SMOTE
+from collections import Counter
+import warnings
+warnings.filterwarnings('ignore')
 
 # ============================================================
 # KROK 1: TWORZENIE SYNTETYCZNEGO DATASETU (imituje Wasze dane)
@@ -79,58 +92,342 @@ def load_your_simulation_data(csv_file):
 # KROK 3: GŁÓWNY PIPELINE MODELU 1
 # ============================================================
 
-def train_classification_model(X, y, class_names, model_type='logistic'):
+def train_classification_model(X, y, class_names, model_type='random_forest', use_smote=True, 
+                                verbose=True, scale_data=True):
     """
-    Trenuje model klasyfikacji, który z parametrów przewiduje typ wzoru
+    Trenuje model klasyfikacji z ogromną liczbą dostępnych modeli!
+    
+    PARAMETRY:
+    ----------
+    X : numpy array - cechy (parametry)
+    y : numpy array - etykiety (wzory)
+    class_names : list - nazwy klas
+    model_type : str - typ modelu (lista dostępnych poniżej)
+    use_smote : bool - czy użyć SMOTE do balansowania
+    verbose : bool - czy wypisywać szczegóły
+    scale_data : bool - czy skalować dane (dla modeli liniowych)
+    
+    DOSTĘPNE MODELE:
+    ----------------
+    'logistic'           - Regresja logistyczna
+    'random_forest'      - Random Forest (domyślny)
+    'xgboost'            - XGBoost (bardzo popularny)
+    'lightgbm'           - LightGBM (szybki)
+    'catboost'           - CatBoost (dobry dla kategorycznych)
+    'gradient_boosting'  - Gradient Boosting
+    'svm'                - Support Vector Machine
+    'knn'                - K-Nearest Neighbors
+    'decision_tree'      - Drzewo decyzyjne
+    'naive_bayes'        - Naiwny Bayes
+    'neural_network'     - Sieć neuronowa (MLP)
+    'lda'                - Liniowa Analiza Dyskryminacyjna
+    'qda'                - Kwadratowa Analiza Dyskryminacyjna
+    'adaboost'           - AdaBoost
+    'extra_trees'        - Extremely Randomized Trees
+    'one_vs_rest_rf'     - OneVsRest z Random Forest
+    'one_vs_rest_svm'    - OneVsRest z SVM
     """
     
-    # Podział na treningowy i testowy
+    # ============================================================
+    # PODZIAŁ DANYCH
+    # ============================================================
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.25, random_state=42, stratify=y
     )
     
-    # Skalowanie cech (ważne dla regresji logistycznej!)
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    # Wybór modelu
-    if model_type == 'logistic':
-        # TWOJA PROPOZYCJA: Regresja logistyczna wielomianowa
-        model = LogisticRegression(
-            multi_class='multinomial',      # <-- to daje wektor prawdopodobieństw
-            solver='lbfgs',
-            max_iter=1000,
-            random_state=42,
-            class_weight='balanced'         # jeśli klasy niezbalansowane
-        )
-    elif model_type == 'random_forest':
-        # Alternatywa: Random Forest też daje prawdopodobieństwa
-        model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=10,
-            random_state=42,
-            class_weight='balanced'
-        )
+    # ============================================================
+    # SMOTE - BALANSOWANIE DANYCH
+    # ============================================================
+    if use_smote:
+        if verbose:
+            print("\n--- Stosuję SMOTE do balansowania klas ---")
+            print(f"Rozkład przed SMOTE: {Counter(y_train)}")
+        
+        smote = SMOTE(random_state=42)
+        X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
+        
+        if verbose:
+            print(f"Rozkład po SMOTE: {Counter(y_train_balanced)}")
+            print(f"Liczba próbek przed SMOTE: {len(X_train)}")
+            print(f"Liczba próbek po SMOTE: {len(X_train_balanced)}")
+        
+        X_train_to_use = X_train_balanced
+        y_train_to_use = y_train_balanced
     else:
-        raise ValueError("Nieznany typ modelu")
+        X_train_to_use = X_train
+        y_train_to_use = y_train
     
-    # Trenowanie
-    print(f"\nTrenowanie modelu: {model_type}")
-    model.fit(X_train_scaled, y_train)
+    # ============================================================
+    # SKALOWANIE (dla modeli wrażliwych na skalę)
+    # ============================================================
+    scaler = StandardScaler()
     
-    # Predykcje na testowym
+    # Modele, które NIE potrzebują skalowania
+    no_scaling_models = [
+        'random_forest', 'xgboost', 'lightgbm', 'catboost', 
+        'gradient_boosting', 'decision_tree', 'extra_trees',
+        'adaboost', 'naive_bayes'
+    ]
+    
+    if scale_data and model_type not in no_scaling_models:
+        X_train_scaled = scaler.fit_transform(X_train_to_use)
+        X_test_scaled = scaler.transform(X_test)
+        if verbose:
+            print("\n--- Dane zostały przeskalowane ---")
+    else:
+        X_train_scaled = X_train_to_use
+        X_test_scaled = X_test
+        # WAŻNE: Trenujemy scaler, żeby działał dla nowych danych!
+        scaler.fit(X_train_to_use)  # <--- DODAJ TĘ JEDNĄ LINIĘ!
+        if verbose and model_type in no_scaling_models:
+            print("\n--- Skalowanie pominięte (model odporny na skalę) ---")
+    
+    # ============================================================
+    # WYBÓR MODELU
+    # ============================================================
+    
+    if verbose:
+        print(f"\n--- Tworzę model: {model_type} ---")
+    
+    # ---- 1. REGRESJA LOGISTYCZNA ----
+    if model_type == 'logistic':
+        if use_smote:
+            model = LogisticRegression(
+                solver='lbfgs', max_iter=2000, random_state=42,
+                class_weight=None
+            )
+        else:
+            model = LogisticRegression(
+                solver='lbfgs', max_iter=2000, random_state=42,
+                class_weight='balanced'
+            )
+    
+    # ---- 2. RANDOM FOREST ----
+    elif model_type == 'random_forest':
+        model = RandomForestClassifier(
+            n_estimators=200, max_depth=15, min_samples_split=5,
+            min_samples_leaf=2, random_state=42, n_jobs=-1,
+            class_weight='balanced' if not use_smote else None
+        )
+    
+    # ---- 3. XGBOOST (bardzo popularny, często najlepszy) ----
+    elif model_type == 'xgboost':
+        model = XGBClassifier(
+            n_estimators=200, max_depth=6, learning_rate=0.1,
+            subsample=0.8, colsample_bytree=0.8, random_state=42,
+            use_label_encoder=False, eval_metric='mlogloss',
+            n_jobs=-1
+        )
+    
+    # ---- 4. LIGHTGBM (szybszy od XGBoost) ----
+    elif model_type == 'lightgbm':
+        model = LGBMClassifier(
+            n_estimators=200, max_depth=6, learning_rate=0.1,
+            num_leaves=31, subsample=0.8, colsample_bytree=0.8,
+            random_state=42, n_jobs=-1, verbose=-1
+        )
+    
+    # ---- 5. CATBOOST (dobry dla danych kategorycznych) ----
+    elif model_type == 'catboost':
+        try:
+            model = CatBoostClassifier(
+                iterations=200, depth=6, learning_rate=0.1,
+                random_state=42, verbose=False
+            )
+        except:
+            print("CatBoost nie jest zainstalowany. Użyj: pip install catboost")
+            print("Zamiast tego używam Random Forest")
+            model = RandomForestClassifier(n_estimators=100, random_state=42)
+    
+    # ---- 6. GRADIENT BOOSTING ----
+    elif model_type == 'gradient_boosting':
+        model = GradientBoostingClassifier(
+            n_estimators=200, max_depth=5, learning_rate=0.1,
+            min_samples_split=5, min_samples_leaf=2, random_state=42
+        )
+    
+    # ---- 7. SVM (Support Vector Machine) ----
+    elif model_type == 'svm':
+        model = SVC(
+            kernel='rbf', C=1.0, gamma='scale', probability=True,
+            class_weight='balanced' if not use_smote else None,
+            random_state=42
+        )
+    
+    # ---- 8. KNN (K-Nearest Neighbors) ----
+    elif model_type == 'knn':
+        model = KNeighborsClassifier(
+            n_neighbors=5, weights='distance', metric='minkowski'
+        )
+    
+    # ---- 9. DRZEWO DECYZYJNE ----
+    elif model_type == 'decision_tree':
+        model = DecisionTreeClassifier(
+            max_depth=10, min_samples_split=5, min_samples_leaf=2,
+            class_weight='balanced' if not use_smote else None,
+            random_state=42
+        )
+    
+    # ---- 10. NAIWNY BAYES ----
+    elif model_type == 'naive_bayes':
+        model = GaussianNB()
+    
+    # ---- 11. SIEĆ NEURONOWA (MLP) ----
+    elif model_type == 'neural_network':
+        model = MLPClassifier(
+            hidden_layer_sizes=(100, 50), activation='relu',
+            solver='adam', max_iter=1000, random_state=42,
+            early_stopping=True
+        )
+    
+    # ---- 12. LDA (Liniowa Analiza Dyskryminacyjna) ----
+    elif model_type == 'lda':
+        model = LinearDiscriminantAnalysis()
+    
+    # ---- 13. QDA (Kwadratowa Analiza Dyskryminacyjna) ----
+    elif model_type == 'qda':
+        model = QuadraticDiscriminantAnalysis()
+    
+    # ---- 14. ADABOOST ----
+    elif model_type == 'adaboost':
+        model = AdaBoostClassifier(
+            n_estimators=200, learning_rate=0.1, random_state=42
+        )
+    
+    # ---- 15. EXTRA TREES (Extremely Randomized Trees) ----
+    elif model_type == 'extra_trees':
+        model = ExtraTreesClassifier(
+            n_estimators=200, max_depth=15, min_samples_split=5,
+            random_state=42, n_jobs=-1
+        )
+    
+    # ---- 16. ONE VS REST z RANDOM FOREST ----
+    elif model_type == 'one_vs_rest_rf':
+        base_model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model = OneVsRestClassifier(base_model)
+    
+    # ---- 17. ONE VS REST z SVM ----
+    elif model_type == 'one_vs_rest_svm':
+        base_model = SVC(kernel='rbf', C=1.0, probability=True, random_state=42)
+        model = OneVsRestClassifier(base_model)
+    
+    else:
+        raise ValueError(f"Nieznany typ modelu: {model_type}\n"
+                         f"Dostępne: logistic, random_forest, xgboost, lightgbm, catboost, "
+                         f"gradient_boosting, svm, knn, decision_tree, naive_bayes, "
+                         f"neural_network, lda, qda, adaboost, extra_trees, "
+                         f"one_vs_rest_rf, one_vs_rest_svm")
+    
+    # ============================================================
+    # TRENOWANIE
+    # ============================================================
+    if verbose:
+        print(f"\n--- Trenuję model ---")
+    
+    try:
+        model.fit(X_train_scaled, y_train_to_use)
+    except Exception as e:
+        print(f"Błąd podczas trenowania {model_type}: {e}")
+        print("Spróbuj innego modelu lub sprawdź dane")
+        return None, None, None, None, None
+    
+    # ============================================================
+    # EWALUACJA
+    # ============================================================
     y_pred = model.predict(X_test_scaled)
-    y_pred_proba = model.predict_proba(X_test_scaled)
     
-    # Ewaluacja
+    # Sprawdź czy model ma predict_proba
+    if hasattr(model, 'predict_proba'):
+        y_pred_proba = model.predict_proba(X_test_scaled)
+    else:
+        y_pred_proba = None
+        if verbose:
+            print("Uwaga: Model nie obsługuje predict_proba")
+    
     accuracy = np.mean(y_pred == y_test)
-    print(f"Dokładność: {accuracy:.3f}")
     
-    print("\nRaport klasyfikacji:")
-    print(classification_report(y_test, y_pred, target_names=class_names))
+    if verbose:
+        print(f"\n--- WYNIKI ---")
+        print(f"Dokładność: {accuracy:.4f}")
+        print("\nRaport klasyfikacji:")
+        print(classification_report(y_test, y_pred, target_names=class_names))
     
     return model, scaler, X_test_scaled, y_test, y_pred_proba
+
+# Funkcja do testowania wszystkich modeli
+def test_all_models(X, y, class_names, use_smote=True):
+    """
+    Testuje wszystkie dostępne modele i pokazuje wyniki
+    """
+    models_to_test = [
+        'logistic',
+        'random_forest',
+        'xgboost',
+        'lightgbm',
+        'gradient_boosting',
+        'svm',
+        'knn',
+        'decision_tree',
+        'naive_bayes',
+        'neural_network',
+        'lda',
+        'qda',
+        'adaboost',
+        'extra_trees'
+    ]
+    
+    results = []
+    
+    print("=" * 80)
+    print("TESTOWANIE WSZYSTKICH MODELI")
+    print("=" * 80)
+    
+    for model_type in models_to_test:
+        print("\n" + "-" * 60)
+        print(f"Testuję: {model_type.upper()}")
+        print("-" * 60)
+        
+        try:
+            model, scaler, X_test, y_test, y_pred_proba = train_classification_model(
+                X, y, class_names, 
+                model_type=model_type, 
+                use_smote=use_smote,
+                verbose=True  # pokazuje wyniki
+            )
+            
+            # Zapisz wynik
+            if model is not None:
+                y_pred = model.predict(X_test)
+                accuracy = np.mean(y_pred == y_test)
+                results.append({
+                    'model': model_type,
+                    'accuracy': accuracy,
+                    'model_obj': model
+                })
+        
+        except Exception as e:
+            print(f"Błąd dla {model_type}: {e}")
+            continue
+    
+    # Podsumowanie
+    print("\n" + "=" * 80)
+    print("PODSUMOWANIE WSZYSTKICH MODELI")
+    print("=" * 80)
+    print(f"{'Model':<20} {'Dokładność':<10}")
+    print("-" * 30)
+    
+    for r in sorted(results, key=lambda x: x['accuracy'], reverse=True):
+        print(f"{r['model']:<20} {r['accuracy']:.4f}")
+    
+    # Najlepszy model
+    if results:
+        best = max(results, key=lambda x: x['accuracy'])
+        print("\n" + "=" * 80)
+        print(f"🏆 NAJLEPSZY MODEL: {best['model']} z dokładnością {best['accuracy']:.4f}")
+        print("=" * 80)
+        return best['model_obj'], best['model']
+    
+    return None, None
 
 # ============================================================
 # KROK 4: PRZYKŁAD UŻYCIA
@@ -148,9 +445,24 @@ print(f"Dane: {X.shape[0]} próbek, {X.shape[1]} parametry")
 print(f"Klasy: {class_names}")
 print(f"Rozkład klas: {np.bincount(y)}")
 
+"""
 # Trenuj model regresji logistycznej (Twój wybór!)
 model, scaler, X_test, y_test, y_pred_proba = train_classification_model(
-    X, y, class_names, model_type='logistic'
+    X, y, class_names, model_type='logistic', use_smote = True
+)
+
+# Trenuj model random_forest (Twój wybór!)
+model, scaler, X_test, y_test, y_pred_proba = train_classification_model(
+    X, y, class_names, model_type='random_forest', use_smote = True
+)
+"""
+
+# Przetestuj wszystkie modele
+best_model, best_name = test_all_models(X, y, class_names, use_smote=True)
+
+# Wytrenuj najlepszy model, żeby mieć dane testowe
+model, scaler, X_test, y_test, y_pred_proba = train_classification_model(
+    X, y, class_names, model_type=best_name, use_smote=True, verbose=True
 )
 
 # ============================================================
