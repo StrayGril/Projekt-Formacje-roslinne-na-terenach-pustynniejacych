@@ -32,20 +32,20 @@ def scan_turing_am(
             except:
                 u_star, v_star = np.nan, np.nan
 
-                # pomijamy przypadki bez sensownego dodatniego stanu
-                if not np.isfinite(u_star) or not np.isfinite(v_star) or v_star <= 1:
-                    results.append({
-                        "a": a,
-                        "m": m,
-                        "u_star": np.nan,
-                        "v_star": np.nan,
-                        "has_state": 0,
-                        "has_turing": 0,
-                        "lambda_max": np.nan,
-                        "k_left": np.nan,
-                        "k_right": np.nan
-                    })
-                    continue
+            # pomijamy przypadki bez sensownego dodatniego stanu
+            if not np.isfinite(u_star) or not np.isfinite(v_star) or v_star <= 1:
+                results.append({
+                    "a": a,
+                    "m": m,
+                    "u_star": np.nan,
+                    "v_star": np.nan,
+                    "has_state": 0,
+                    "has_turing": 0,
+                    "lambda_max": np.nan,
+                    "k_left": np.nan,
+                    "k_right": np.nan
+                })
+                continue
 
             try:
                 res = turing_analysis(a, m, d1, d2, k_min=k_min, k_max=k_max, n_k=n_k)
@@ -158,3 +158,57 @@ def plot_turing_regions(results, ax = None):
     ax.set_title("Mapa stanów w płaszczyźnie (a, m)")
     ax.legend()
     ax.grid(True, alpha=0.3)
+
+def a_m_pairs(results, m_values):
+    out = []
+
+    for m in m_values:
+        dane_m = []
+
+        # zbieramy tylko punkty z tym m i has_turing = 1
+        for r in results:
+            if r["m"] == m and r["has_turing"] == 1 and np.isfinite(r["lambda_max"]):
+                dane_m.append(r)
+
+        # jeśli brak punktów Turinga dla tego m
+        if len(dane_m) == 0:
+            out.append({
+                "m": m,
+                "a_max": np.nan,
+                "lambda_max": np.nan,
+                "a_mean": np.nan,
+                "lambda_mean_like": np.nan
+            })
+            continue
+
+        # 1) punkt z największym lambda_max
+        best = dane_m[0]
+        for r in dane_m:
+            if r["lambda_max"] > best["lambda_max"]:
+                best = r
+
+        # 2) średnia lambda_max dla tego m
+        suma = 0
+        for r in dane_m:
+            suma += r["lambda_max"]
+        srednia = suma / len(dane_m)
+
+        # punkt najbliższy średniej
+        mean_like = dane_m[0]
+        best_dist = abs(dane_m[0]["lambda_max"] - srednia)
+
+        for r in dane_m:
+            dist = abs(r["lambda_max"] - srednia)
+            if dist < best_dist:
+                best_dist = dist
+                mean_like = r
+
+        out.append({
+            "m": m,
+            "a_max": best["a"],
+            "lambda_max": best["lambda_max"],
+            "a_mean": mean_like["a"],
+            "lambda_mean_like": mean_like["lambda_max"]
+        })
+
+    return out

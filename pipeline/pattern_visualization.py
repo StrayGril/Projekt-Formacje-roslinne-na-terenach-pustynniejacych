@@ -95,18 +95,8 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-2, d
     u_0, v_0 = initial_conditions(Nx, Ny, a, m, brzeg, noise)
     u_curr, v_curr = u_0.copy(), v_0.copy()
 
-    states = {"0": (u_0.copy(), v_0.copy())}
-    snapshot_times = {
-        T // 2: "T/2",
-        3 * T // 4: "3T/4",
-        T: "T"
-    }
-
-    for t in range(1, T + 1):
+    for t in range(T):
         u_curr, v_curr = step_reaction_diffusion(u_curr, v_curr, a, m, ht, lu_Au, lu_Av, brzeg)
-        if t in snapshot_times:
-            label = snapshot_times[t]
-            states[label] = (u_curr.copy(), v_curr.copy())
 
     if do_modelu is True:
         return u_curr.reshape(Ny, Nx), v_curr.reshape(Ny, Nx)
@@ -118,7 +108,6 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-2, d
         "v0": v_0,
         "uT": u_curr,
         "vT": v_curr,
-        "states": states,
     }
 
 # --------------------------------------------------
@@ -149,12 +138,12 @@ def plot_patterns(sim_data, wykres="uv"):
     
     if "u" in wykres:
         fig, axs = plt.subplots(1, 2, figsize=(10, 4))
-        dane = [states[t][1] for t in states]
+        dane = [states[t][0] for t in states]
         levels = np.linspace(min(d.min() for d in dane), max(d.max() for d in dane), 50)
 
-        for ax, (t, (_, v)) in zip(axs.flat, states.items()):
-            im = ax.contourf(X, Y, v.reshape(Ny, Nx), levels=levels, cmap=cmap_v)
-            ax.set_title(f"Biomasa v(t={t})")
+        for ax, (t, (u, _)) in zip(axs.flat, states.items()):
+            im = ax.contourf(X, Y, u.reshape(Ny, Nx), levels=levels, cmap=cmap_u)
+            ax.set_title(f"Woda u(t={t})")
 
         fig.colorbar(im, ax=axs)
         plt.show()
