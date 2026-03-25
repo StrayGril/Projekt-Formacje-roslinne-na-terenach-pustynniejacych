@@ -1,5 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
+
+from ipykernel.eventloops import loop_qt
+
 from pipeline.model_core import (
     make_grid,
     dirichlet_boundary_mask,
@@ -197,3 +201,94 @@ def plot_matrix(M, plot_title="Wykres", show=True):
         plt.ylabel("y")
         plt.tight_layout()
         plt.show()
+    else:
+        plt.show(block=False)
+        plt.pause(0.1)
+
+
+# Generowanie i zapisywanie macierzy
+def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100):
+    """
+    Zapisuje macierze i dane w zewnętrznym pliku.
+
+    """
+    length = len(a_v)
+
+    if ((len(m_v) != length) or (len(d1_v) != length) or (len(d2_v) != length)):
+        raise ValueError("Vectors' lengths unequal")
+
+    U = []
+    V = []
+
+    for i in range(length): #symulacja dla kolejnych parametrow
+        u, v = simulate_patterns(a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny, T=8000, do_modelu=True)
+        # chcemy macierze czy wektory? obie czy v?
+        U.append(u)
+        V.append(v)
+
+    np.savez_compressed(f"{file_name}.npz",
+                        U=np.array(U),
+                        V=np.array(V),
+                        a=a_v,
+                        m=m_v,
+                        d1=d1_v,
+                        d2=d2_v,
+                        patterns = np.full(length, -1, dtype=int) #bylo None ale czasem od neigo glupieje
+                        ) # lub tu można też dać już wymiarowe parametry
+
+    print("Koniec zapisu.")
+
+# ogladamy obrazki i dopisujemy etykiety
+def define_patterns(file_name):
+    with np.load(f"{file_name}.npz", allow_pickle=True) as loader:
+        dane = dict(loader)
+
+    ile_macierzy = len(dane["V"])
+    patterns = dane["patterns"].copy()
+
+    for i in range(ile_macierzy):
+        # pomijamy te, które już mają etykiete
+        if patterns[i] != -1:
+            continue
+
+        plot_matrix(dane["V"][i], show=False)
+
+        odp = input("0. nic, 1. cętki, 2. pasy, 3. labirynty, 4. dziury, 5. coś (q=wyjdź): ")
+
+        if odp.lower() == 'q':
+            plt.close()
+            break
+
+        try:
+            patterns[i] = int(odp)
+        except ValueError:
+            print("Pominięto (niepoprawny znak).")
+
+        plt.close()
+
+    dane["patterns"] = np.array(patterns)
+
+    np.savez_compressed(f"{file_name}.npz", **dane)
+    print(f"Koniec. Etykiety ma {sum(1 for x in patterns if x != -1.)}/{ile_macierzy} macierzy.")
+
+# konwersja do csv z pominieciem macierzy
+def convert_to_csv(npz_file_name):
+    dane = np.load(f"{npz_file_name}.npz", allow_pickle=True)
+
+    # Tworzymy słownik tylko z tych danych, które chcemy w tabeli
+    tabela = {
+        'a': dane['a'],
+        'm': dane['m'],
+        'd1': dane['d1'],
+        'd2': dane['d2'],
+        'pattern': dane['patterns']
+    }
+
+
+    df = pd.DataFrame(tabela)
+
+    output_name = f"{npz_file_name}.csv"
+    df.to_csv(output_name, index=False)
+
+    print(f"Tabela została zapisana do pliku: {output_name}.")
+    return df
