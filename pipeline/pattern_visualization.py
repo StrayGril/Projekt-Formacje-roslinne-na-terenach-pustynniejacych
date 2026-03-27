@@ -62,7 +62,7 @@ def initial_conditions(Nx, Ny, a, m, brzeg, noise=1e-3):
 # --------------------------------------------------
 # Symulacja wzorów
 # --------------------------------------------------
-def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-2, do_modelu=False):
+def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-3, do_modelu=False):
     """
     Przeprowadza symulację układu reakcji-dyfuzji przez T kroków czasowych.
 
@@ -247,7 +247,10 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
                 d1_ok.append(d1_v[i])
                 d2_ok.append(d2_v[i])
 
-            except Exception:
+            #except Exception:
+            except Exception as e:
+                # Wypisujemy numer iteracji i treść błędu (np. FloatingPointError)
+                print(f"BŁĄD w iteracji {i}: {e}")
                 continue
     finally:
         np.seterr(**old_settings)
@@ -310,7 +313,7 @@ def define_patterns(file_name, folder="wykresy_etykiety", cmap=None):
 def convert_to_csv(npz_file_name):
     dane = np.load(f"{npz_file_name}.npz", allow_pickle=True)
 
-    # Tworzymy słownik tylko z tych danych, które chcemy w tabeli
+    # Tworzymy słownik tylko z tych danych, które chcemy w tabeli - bez macierzy
     tabela = {
         'a': dane['a'],
         'm': dane['m'],
