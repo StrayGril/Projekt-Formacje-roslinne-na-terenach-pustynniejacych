@@ -215,7 +215,7 @@ def plot_matrix(M, plot_title="Wykres", show=True, cmap=None):
 
 
 # Generowanie i zapisywanie macierzy
-def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T = 8000):
+def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T = 8000, ht = 0.01):
     """
     Zapisuje macierze i dane w zewnętrznym pliku.
 
@@ -237,7 +237,7 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
     try:
         for i in range(length): #symulacja dla kolejnych parametrow
             try:
-                u, v = simulate_patterns(a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny, T=T, do_modelu=True)
+                u, v = simulate_patterns(a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny, T=T, ht = ht, do_modelu=True)
 
                 # chcemy macierze czy wektory? obie czy v?
                 U.append(u)
