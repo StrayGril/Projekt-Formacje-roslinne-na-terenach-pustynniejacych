@@ -160,7 +160,7 @@ def plot_turing_regions(results, ax = None):
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-def a_m_pairs(results, m_values):
+def a_m_pairs(results, m_values, n_selected=5, ):
     out = []
 
     for m in m_values:
@@ -182,8 +182,8 @@ def a_m_pairs(results, m_values):
                 "m": m,
                 "a_max": np.nan,
                 "lambda_max": np.nan,
-                "a_mean": np.nan,
-                "lambda_mean_like": np.nan
+                "a_band": [],
+                "lambda_band": []
             })
             continue
 
@@ -206,8 +206,17 @@ def a_m_pairs(results, m_values):
             dane_strong = dane_m
 
         dane_strong = sorted(dane_strong, key=lambda r: r["a"])
-        a_band = [r["a"] for r in dane_strong]
-        lambda_band = [r["lambda_max"] for r in dane_strong]
+
+        n_take = min(n_selected, len(dane_strong))
+        idx = np.linspace(0, len(dane_strong) - 1, n_take, dtype=int)
+        idx = np.unique(idx)
+
+        selected = []
+        for i in idx:
+            selected.append(dane_strong[i])
+
+        a_band = [round(r["a"], 4) for r in selected] # !!!przybliżenie
+        lambda_band = [r["lambda_max"] for r in selected]
 
         out.append({
             "m": m,

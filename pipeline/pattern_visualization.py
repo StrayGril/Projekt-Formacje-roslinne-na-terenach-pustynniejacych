@@ -62,7 +62,26 @@ def initial_conditions(Nx, Ny, a, m, brzeg, noise=1e-3):
 # --------------------------------------------------
 # Symulacja wzorów
 # --------------------------------------------------
-def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-2, do_modelu=False):
+def simulate_patterns(
+        a,
+        m,
+        d1,
+        d2,
+        Lx,
+        Ly,
+        Nx,
+        Ny,
+        T,
+        ht=0.025,
+        noise=1e-2,
+        do_modelu=False,
+        check_every=200,
+        tol_mean=1e-5,
+        tol_max=1e-5,
+        tol_var=1e-5,
+        early_stop=True,
+        verbose=False,
+):
     """
     Przeprowadza symulację układu reakcji-dyfuzji przez T kroków czasowych.
 
@@ -87,6 +106,18 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-2, d
         Liczba kroków czasowych symulacji.
     do_modelu : bool
         Czy zwracać końcowe macierze u i v.
+    check_every : int
+        Co ile kroków porównywać mean/max/var.
+    tol_mean : float
+        Tolerancja dla średniej.
+    tol_max : float
+        Tolerancja dla maksimum.
+    tol_var : float
+        Tolerancja dla wariancji.
+    early_stop : bool
+        Czy zatrzymać symulację wcześniej po stabilizacji.
+    verbose : bool
+        Czy wypisywać informacje diagnostyczne.
 
     Zwraca
     dict lub tuple
@@ -99,9 +130,57 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-2, d
     u_0, v_0 = initial_conditions(Nx, Ny, a, m, brzeg, noise)
     u_curr, v_curr = u_0.copy(), v_0.copy()
 
-    for t in range(T):
-        u_curr, v_curr = step_reaction_diffusion(u_curr, v_curr, a, m, ht, lu_Au, lu_Av, brzeg)
+    stats_hist = []
+    stopped_early = False
+    nan_detected = False
+    last_step = T - 1
 
+    for t in range(T):
+        u_curr, v_curr = step_reaction_diffusion(
+            u_curr, v_curr, a, m, ht, lu_Au, lu_Av, brzeg
+        )
+
+        # przerwanie jeśli pojawi się NaN albo inf
+        if (not np.all(np.isfinite(u_curr))) or (not np.all(np.isfinite(v_curr))):
+            nan_detected = True
+            last_step = t
+            if verbose:
+                print(f"Przerwano: NaN/inf w kroku {t}")
+            break
+
+        # co pewien czas sprawdzamy stabilizację rozwiązania
+        if (t + 1) % check_every == 0:
+            v_inside = v_curr[~brzeg]
+            mean_v = np.mean(v_inside)
+            var_v = np.var(v_inside)
+
+            stats_hist.append((mean_v, max_v, var_v))
+
+            if verbose:
+                print(
+                    f"krok={t + 1}, mean(v)={mean_v:.6e}, "
+                    f"max(v)={max_v:.6e}, var(v)={var_v:.6e}"
+                )
+
+            if early_stop and len(stats_hist) >= 2:
+                prev_mean, prev_max, prev_var = stats_hist[-2]
+                curr_mean, curr_max, curr_var = stats_hist[-1]
+
+                d_mean = abs(curr_mean - prev_mean)
+                d_max = abs(curr_max - prev_max)
+                d_var = abs(curr_var - prev_var)
+
+                if (
+                        d_mean < tol_mean
+                        and d_max < tol_max
+                        and d_var < tol_var
+                ):
+                    stopped_early = True
+                    last_step = t
+                    if verbose:
+                        print(f"Przerwano wcześniej po stabilizacji w kroku {t + 1}")
+                    break
+        last_step = t
     if do_modelu is True:
         return u_curr.reshape(Ny, Nx), v_curr.reshape(Ny, Nx)
 
@@ -112,6 +191,10 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht = 0.025, noise=1e-2, d
         "v0": v_0,
         "uT": u_curr,
         "vT": v_curr,
+        "stats_hist": stats_hist,
+        "stopped_early": stopped_early,
+        "nan_detected": nan_detected,
+        "last_step": last_step + 1,
     }
 
 # --------------------------------------------------
@@ -237,8 +320,9 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
     try:
         for i in range(length): #symulacja dla kolejnych parametrow
             try:
-                u, v = simulate_patterns(a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny, T=T, ht = ht, do_modelu=True)
-
+                u, v = simulate_patterns(
+                    a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly,
+                    Nx=Nx, Ny=Ny, T=T, ht = ht, do_modelu=True)
                 # chcemy macierze czy wektory? obie czy v?
                 U.append(u)
                 V.append(v)
