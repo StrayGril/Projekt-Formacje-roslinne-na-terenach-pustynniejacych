@@ -65,7 +65,7 @@ def initial_conditions(Nx, Ny, a, m, brzeg, noise=1e-3):
 # --------------------------------------------------
 # Symulacja wzorów
 # --------------------------------------------------
-<<<<<<< HEAD
+
 def simulate_patterns(
         a,
         m,
@@ -86,9 +86,6 @@ def simulate_patterns(
         early_stop=True,
         verbose=False,
 ):
-=======
-def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht=0.025, noise=1e-2, do_modelu=False):
->>>>>>> 60361bab4426a74ba4b0d068ac4eae5566b84a2e
     """
     Przeprowadza symulację układu reakcji-dyfuzji przez T kroków czasowych.
 
@@ -130,12 +127,14 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht=0.025, noise=1e-2, do_
     dict lub tuple
         Słownik danych do wykresów albo końcowe macierze u i v.
     """
+
     x, y, X, Y, h = make_grid(Lx, Ly, Nx, Ny)
     brzeg = dirichlet_boundary_mask(X, Y, Lx, Ly)
 
     lu_Au, lu_Av = precompute_diffusion(Nx, Ny, h, ht, d1, d2)
     u_0, v_0 = initial_conditions(Nx, Ny, a, m, brzeg, noise)
     u_curr, v_curr = u_0.copy(), v_0.copy()
+    u_hist, v_hist = u_0.copy(), v_0.copy()
 
     stats_hist = []
     stopped_early = False
@@ -151,15 +150,19 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht=0.025, noise=1e-2, do_
         if (not np.all(np.isfinite(u_curr))) or (not np.all(np.isfinite(v_curr))):
             nan_detected = True
             last_step = t
+            u_curr, v_curr = u_hist, v_hist
             if verbose:
-                print(f"Przerwano: NaN/inf w kroku {t}")
+                print(f"Przerwano: NaN/inf w kroku {t}. Zwracam poprzedni udany zapis.")
             break
 
         # co pewien czas sprawdzamy stabilizację rozwiązania
         if (t + 1) % check_every == 0:
+            u_hist, v_hist = u_curr.copy(), v_curr.copy()
+
             v_inside = v_curr[~brzeg]
             mean_v = np.mean(v_inside)
             var_v = np.var(v_inside)
+            max_v = np.max(v_inside)
 
             stats_hist.append((mean_v, max_v, var_v))
 
@@ -188,9 +191,11 @@ def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht=0.025, noise=1e-2, do_
                         print(f"Przerwano wcześniej po stabilizacji w kroku {t + 1}")
                     break
         last_step = t
+
+    #print(f"powyższe to {round(a,4)} ostatni krok t {last_step}")
+
     if do_modelu is True:
         return u_curr.reshape(Ny, Nx), v_curr.reshape(Ny, Nx)
-
     return {
         "X": X,
         "Y": Y,
@@ -315,7 +320,7 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
     """
     length = len(a_v)
 
-    if ((len(m_v) != length) or (len(d1_v) != length) or (len(d2_v) != length)):
+    if (len(m_v) != length) or (len(d1_v) != length) or (len(d2_v) != length):
         raise ValueError("Vectors' lengths unequal")
 
     U = []
@@ -325,21 +330,15 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
     d1_ok = []
     d2_ok = []
 
-    old_settings = np.seterr(over='raise', invalid='raise', divide='raise')
+    old_settings = np.seterr(over='warn', invalid='warn', divide='warn')
 
     try:
         for i in range(length):  # symulacja dla kolejnych parametrow
             try:
-<<<<<<< HEAD
                 u, v = simulate_patterns(
                     a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly,
-                    Nx=Nx, Ny=Ny, T=T, ht = ht, do_modelu=True)
-=======
-                u, v = simulate_patterns(a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny, T=T, ht=ht,
-                                         do_modelu=True)
+                    Nx=Nx, Ny=Ny, T=T, ht=ht, do_modelu=True, verbose=True) #@zmiana
 
->>>>>>> 60361bab4426a74ba4b0d068ac4eae5566b84a2e
-                # chcemy macierze czy wektory? obie czy v?
                 U.append(u)
                 V.append(v)
                 a_ok.append(a_v[i])
@@ -347,7 +346,9 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
                 d1_ok.append(d1_v[i])
                 d2_ok.append(d2_v[i])
 
-            except Exception:
+
+            except Exception as e:
+                print(f"Symulacja dla a={a_v[i]} nie powiodła się: {e}")
                 continue
     finally:
         np.seterr(**old_settings)
