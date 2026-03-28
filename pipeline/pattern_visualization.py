@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import os
 
 from ipykernel.eventloops import loop_qt
 
@@ -12,6 +13,7 @@ from pipeline.model_core import (
     step_reaction_diffusion
 )
 from matplotlib.colors import LinearSegmentedColormap
+
 cmap_u = LinearSegmentedColormap.from_list("yellow_to_darkblue", ["#fde456", "#08306b"])
 cmap_v = LinearSegmentedColormap.from_list("yellow_to_darkgreen", ["#fde456", "#00441b"])
 
@@ -59,9 +61,11 @@ def initial_conditions(Nx, Ny, a, m, brzeg, noise=1e-3):
 
     return u, v
 
+
 # --------------------------------------------------
 # Symulacja wzorów
 # --------------------------------------------------
+<<<<<<< HEAD
 def simulate_patterns(
         a,
         m,
@@ -82,6 +86,9 @@ def simulate_patterns(
         early_stop=True,
         verbose=False,
 ):
+=======
+def simulate_patterns(a, m, d1, d2, Lx, Ly, Nx, Ny, T, ht=0.025, noise=1e-2, do_modelu=False):
+>>>>>>> 60361bab4426a74ba4b0d068ac4eae5566b84a2e
     """
     Przeprowadza symulację układu reakcji-dyfuzji przez T kroków czasowych.
 
@@ -197,6 +204,7 @@ def simulate_patterns(
         "last_step": last_step + 1,
     }
 
+
 # --------------------------------------------------
 # Wykresy z symulacji
 # --------------------------------------------------
@@ -222,7 +230,7 @@ def plot_patterns(sim_data, wykres="uv"):
         "0": (sim_data["u0"], sim_data["v0"]),
         "T": (sim_data["uT"], sim_data["vT"])
     }
-    
+
     if "u" in wykres:
         fig, axs = plt.subplots(1, 2, figsize=(10, 4))
         dane = [states[t][0] for t in states]
@@ -246,6 +254,7 @@ def plot_patterns(sim_data, wykres="uv"):
 
         fig.colorbar(im, ax=axs)
         plt.show()
+
 
 # --------------------------------------------------
 # Wykresy ???
@@ -298,7 +307,8 @@ def plot_matrix(M, plot_title="Wykres", show=True, cmap=None):
 
 
 # Generowanie i zapisywanie macierzy
-def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T = 8000, ht = 0.01):
+def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T=8000, ht=0.01,
+                folder_zapisu="wykresy_bez_etykiet"):
     """
     Zapisuje macierze i dane w zewnętrznym pliku.
 
@@ -318,11 +328,17 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
     old_settings = np.seterr(over='raise', invalid='raise', divide='raise')
 
     try:
-        for i in range(length): #symulacja dla kolejnych parametrow
+        for i in range(length):  # symulacja dla kolejnych parametrow
             try:
+<<<<<<< HEAD
                 u, v = simulate_patterns(
                     a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly,
                     Nx=Nx, Ny=Ny, T=T, ht = ht, do_modelu=True)
+=======
+                u, v = simulate_patterns(a_v[i], m_v[i], d1_v[i], d2_v[i], Lx=Lx, Ly=Ly, Nx=Nx, Ny=Ny, T=T, ht=ht,
+                                         do_modelu=True)
+
+>>>>>>> 60361bab4426a74ba4b0d068ac4eae5566b84a2e
                 # chcemy macierze czy wektory? obie czy v?
                 U.append(u)
                 V.append(v)
@@ -336,22 +352,26 @@ def save_as_npz(file_name, a_v, m_v, d1_v, d2_v, Lx=20, Ly=20, Nx=100, Ny=100, T
     finally:
         np.seterr(**old_settings)
 
-    np.savez_compressed(f"{file_name}.npz",
+    sciezka = os.path.join(folder_zapisu, f"{file_name}.npz")
+
+    np.savez_compressed(sciezka,
                         U=np.array(U),
                         V=np.array(V),
                         a=np.array(a_ok),
                         m=np.array(m_ok),
                         d1=np.array(d1_ok),
                         d2=np.array(d2_ok),
-                        patterns = np.full(length, -1, dtype=int) #bylo None ale czasem od neigo glupieje
-                        ) # lub tu można też dać już wymiarowe parametry
+                        patterns=np.full(len(a_ok), -1, dtype=int)
+                        )  # lub tu można też dać już wymiarowe parametry
 
     print("Koniec zapisu.")
 
+
 # ogladamy obrazki i dopisujemy etykiety
-def define_patterns(file_name, folder="wykresy_etykiety", cmap=None):
-    import os
-    with np.load(f"{file_name}.npz", allow_pickle=True) as loader:
+def define_patterns(file_name, folder="wykresy_etykiety", folder_stary="wykresy_bez_etykiet", cmap=None):
+    sciezka = os.path.join(folder_stary, f"{file_name}.npz")
+
+    with np.load(sciezka, allow_pickle=True) as loader:
         dane = dict(loader)
 
     if cmap is None:
@@ -387,8 +407,9 @@ def define_patterns(file_name, folder="wykresy_etykiety", cmap=None):
     output_path = os.path.join(folder, f"{file_name}.npz")
 
     np.savez_compressed(output_path, **dane)
-    print(f"Koniec. Etykiety ma {sum(1 for x in patterns if x != -1.)}/{ile_macierzy} macierzy.")
+    print(f"Koniec. Etykiety ma {sum(1 for x in patterns if x != -1)}/{ile_macierzy} macierzy.")
     print(f"Plik zapisano do: {output_path}")
+
 
 # konwersja do csv z pominieciem macierzy
 def convert_to_csv(npz_file_name):
@@ -402,7 +423,6 @@ def convert_to_csv(npz_file_name):
         'd2': dane['d2'],
         'pattern': dane['patterns']
     }
-
 
     df = pd.DataFrame(tabela)
 
