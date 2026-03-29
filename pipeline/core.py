@@ -211,13 +211,13 @@ def check_ode_stability(a: float, m: float):
 # ==============================================
 # SPATIAL DISCRETIZATION AND LAPLACIAN OPERATOR
 # ==============================================
-def D2(N: int) -> np.ndarray:
+def D2(n: int) -> np.ndarray:
     """
     Constructs the sparse 1D second-derivative matrix
     using the standard tridiagonal finite-difference stencil.
 
     Parameters
-    N : int
+    n : int
         Matrix size.
 
     Zwraca
@@ -253,7 +253,7 @@ def laplacian2D(nx: int, ny: int, h: float):
     ix = eye(nx, format="csr")
     iy = eye(ny, format="csr")
     
-    laplacian = (kron(Iy, D2x) + kron(D2y, Ix)) / (h * h)
+    laplacian = (kron(iy, d2x) + kron(d2y, ix)) / (h * h)
     return laplacian.tocsr()
 
 def make_grid(lx: float, ly: float, nx: int, ny: int):
@@ -287,7 +287,10 @@ def make_grid(lx: float, ly: float, nx: int, ny: int):
 
     if hx != hy:
         raise ValueError("The grid requires hx = hy")
+    h = hx
+
     return x, y, X, Y, h
+
 
 def dirichlet_boundary_mask(X: np.ndarray, Y: np.ndarray, lx: float, ly: float):
     """

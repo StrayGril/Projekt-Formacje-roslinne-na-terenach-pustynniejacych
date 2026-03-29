@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 import tqdm
 
 
-from pipeline.model_core import (
+from pipeline.core import (
     make_grid,
     dirichlet_boundary_mask,
     precompute_diffusion,
     step_reaction_diffusion
 )
-from pipeline.pattern_visualization import initial_conditions
+from pipeline.patterns import initial_conditions
 
 
 
@@ -85,10 +85,10 @@ def test_ht(T, kroki, a, m, d1, d2, Lx, Ly, Nx, Ny):
         bledy_v.append(blad_ht_v / t)
 
 
-    plt.plot(kroki, np.array(bledy_u), label=f"woda", c="blue")
-    plt.plot(kroki, np.array(bledy_v), label="biomasa", c="green")
+    plt.plot(kroki, np.array(bledy_u), label=f"water", c="blue")
+    plt.plot(kroki, np.array(bledy_v), label="biomass", c="green")
 
-    plt.title(f"Wykres błędu podwojonego kroku czasowego dla T={T}")
+    plt.title(f"Double step error plot for T={T}")
     plt.xlabel("$h_t$")
     plt.ylabel("log(MAE)")
     #plt.xscale('log')

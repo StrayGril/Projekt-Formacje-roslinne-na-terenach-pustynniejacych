@@ -175,7 +175,7 @@ def plot_dispersion(k_values: np.ndarray, lambda_max: np.ndarray, band: dict):
     lambda_left = np.interp(k_left, k_values, lambda_max)
 
     k_right = band["k_max"]
-    lambda_right = np.interp(k_max, k_values, lambda_max)
+    lambda_right = np.interp(k_right, k_values, lambda_max) #tu było kmax
 
     k_dom = band["k_dom"]
     lambda_dom = np.interp(k_dom, k_values, lambda_max)

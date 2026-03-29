@@ -94,8 +94,8 @@ def continuation_sweep(
             states.append((u.copy(), v.copy()))
 
     result = {
-        "avg": np.array(avgs),
-        "max": np.array(maxs)
+        "avg": np.array(avg_values),
+        "max": np.array(max_values)
     }
 
     if store_states:
@@ -476,7 +476,7 @@ def run_bifurcation_down(
         lu_Au=lu_Au,
         lu_Av=lu_Av,
         boundary_mask=boundary_mask,
-        boundary_mask=boundary_mask,
+        #boundary_mask=boundary_mask,
         eps=eps,
         store_states=store_down_states,
     )
