@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from pipeline.model_core import (
+from pipeline.core import (
     v_stac,
     u_stac,
     make_grid,
