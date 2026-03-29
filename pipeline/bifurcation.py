@@ -1,18 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from pipeline.core import (
-    v_stac,
-    u_stac,
+    v_steady,
+    u_steady,
     make_grid,
     dirichlet_boundary_mask,
     precompute_diffusion,
-    step_reaction_diffusion,
     simulate_to_steady
 )
 
-# ---------------------------------------
-# Kontynuacja symulacji
-# ---------------------------------------
+# ---------------------------------------------------
+# Numerical continuation with respect to parameter a
+# ---------------------------------------------------
 def continuation_sweep(
     a_values: np.ndarray,
     u_init: np.ndarray,
@@ -21,115 +20,142 @@ def continuation_sweep(
     ht: float,
     lu_Au,
     lu_Av,
-    brzeg: np.ndarray,
-    krok_max: int = 500,
+    boundary_mask: np.ndarray,
+    max_steps: int = 500,
     eps: float = 1e-8,
     store_states: bool = True,
 ):
     """
-    Wykonuje kontynuację numeryczną względem parametru a.
+    Performs numerical continuation with respect to parameter ``a``.
 
-    Dla każdej wartości a z a_values:
-        1. Rozwiązuje układ do stanu stacjonarnego.
-        2. Używa otrzymanego rozwiązania jako warunku początkowego
-           dla kolejnej wartości parametru.
-        3. Zapisuje otrzymane wyniki.
+    For each parameter value in ``a_values``:
+        1. Solves the system until a stationary state is reached.
+        2. Uses the computed solution as the initial condition
+           for the next parameter value.
+        3. Stores selected measures of the final state.
 
-    Rejestrowane miary:
-        μ_v  = średnia biomasa,
-        max_v = maksimum biomasy.
+    Recorded measures:
+        - ``avg`` : spatial average of biomass,
+        - ``max`` : spatial maximum of biomass.
 
-    Parametry
-    ----------
+    Parameters
     a_values : np.ndarray
-        Wartości parametru a (w ustalonej kolejności).
+        Values of parameter ``a`` in the prescribed continuation order.
     u_init, v_init : np.ndarray
-        Warunki początkowe dla pierwszej wartości parametru.
+        Initial condition for variables ``u``, ``v`` at the first value of ``a``.
     m : float
-        Parametr modelu.
+        Model parameter.
     ht : float
-        Krok czasowy.
+        Time step.
     lu_Au, lu_Av :
-        Rozkłady LU macierzy dyfuzyjnych.
-    brzeg : np.ndarray
-        Maska warunków Dirichleta.
-    krok_max : int
-        Maksymalna liczba iteracji w solverze steady-state.
-    eps : float
-        Tolerancja zbieżności.
-    store_states : bool
-        Czy zapisywać pełne stany (u, v) dla każdej wartości a.
+        LU factorizations of the diffusion matrices.
+    boundary_mask : np.ndarray
+        Mask corresponding to Dirichlet boundary conditions.
+    max_steps : int, default=500
+        Maximum number of iterations in the steady-state solver.
+    eps : float, default=1e-8
+        Convergence tolerance.
+    store_states : bool, default=True
+        Whether to store full states ``(u, v)`` for each parameter value.
 
-    Zwraca
-        (avg, max, states)
+    Returns
+    dict
+        Dictionary containing:
+        - ``"avg"``    : array of average biomass values,
+        - ``"max"``    : array of maximum biomass values,
+        - ``"states"`` : list of pairs ``(u, v)`` if ``store_states=True``.
     """
+    if a_values.size == 0:
+        raise ValueError("a_values cannot be empty")
+    if ht <= 0:
+        raise ValueError("ht must be positive")
+    if max_steps <= 0:
+        raise ValueError("max_steps must be positive")
+    if eps <= 0:
+        raise ValueError("eps must be positive")
+
     u = u_init.copy()
     v = v_init.copy()
 
-    avgs = []
-    maxs = []
+    avg_values = []
+    max_values = []
     states = [] if store_states else None
 
     for a in a_values:
         u, v, _ = simulate_to_steady(
             u, v, a, m, ht, lu_Au, lu_Av,
-            brzeg=brzeg, krok_max=krok_max, eps=eps
+            boundary_mask=boundary_mask, max_steps=max_steps, eps=eps
         )
 
-        avgs.append(float(np.mean(v)))
-        maxs.append(float(np.max(v)))
+        avg_values.append(float(np.mean(v)))
+        max_values.append(float(np.max(v)))
 
         if store_states:
             states.append((u.copy(), v.copy()))
 
-    out = {"avg": np.array(avgs), "max": np.array(maxs)}
+    result = {
+        "avg": np.array(avgs),
+        "max": np.array(maxs)
+    }
+
     if store_states:
-        out["states"] = states
-    return out
+        result["states"] = states
 
-# ---------------------------------------
-# Estymacja tipping point
-# ---------------------------------------
-def estimate_tipping_point(a_values_desc: np.ndarray, max_series: np.ndarray) -> tuple[float, int]:
+    return result
+
+# --------------------------
+# Tipping point estimation
+# --------------------------
+def estimate_tipping_point(
+        a_values_desc: np.ndarray,
+        max_series: np.ndarray
+):
     """
-    Szacuje punkt krytyczny (tipping point) na podstawie
-    największego skoku maksimum biomasy.
+    Estimates the critical point (tipping point) based on
+    the largest jump in the biomass maximum.
 
-    Algorytm:
-        1. Oblicza różnice kolejnych wartości max(v).
-        2. Wybiera indeks największej bezwzględnej zmiany.
-        3. Przyjmuje punkt krytyczny jako środek przedziału
-           pomiędzy dwiema sąsiednimi wartościami parametru.
+    Algorithm:
+        1. Computes differences between consecutive values of ``max(v)``.
+        2. Selects the index of the largest absolute change.
+        3. Takes the critical point as the midpoint of the interval
+           between two neighboring parameter values.
 
-    Parametry
+    Parameters
     a_values_desc : np.ndarray
-        Malejące wartości parametru a.
+        Decreasing values of parameter ``a``.
     max_series : np.ndarray
-        Maksimum biomasy dla kolejnych wartości a.
+        Biomass maxima corresponding to consecutive parameter values.
 
-    Zwraca
-        (tp, idx), gdzie:
-            tp  – przybliżony punkt krytyczny,
-            idx – indeks odpowiadający największemu skokowi.
+    Returns
+    tuple[float, int]
+        Pair ``(tp, idx)``, where:
+        - ``tp``  : approximate tipping point,
+        - ``idx`` : index corresponding to the largest jump.
     """
-    dv = np.abs(np.diff(max_series))
-    idx = int(np.argmax(dv))
-    tp = 0.5 * (a_values_desc[idx] + a_values_desc[idx + 1])
-    return float(tp), idx
+    if len(a_values_desc) != len(max_series):
+        raise ValueError("a_values_desc and max_series must have the same length")
+    if len(max_series) < 2:
+        raise ValueError("At least 2 points are required to estimate a tipping point")
 
-# ---------------------------------------
-# Pełna symulacja bifurkacyjna
-# ---------------------------------------
+    delta_max = np.abs(np.diff(max_series))
+    idx = int(np.argmax(delta_max))
+    tipping_point = 0.5 * (a_values_desc[idx] + a_values_desc[idx + 1])
+
+    return float(tipping_point), idx
+
+# --------------------------
+# Full bifurcation analysis
+# --------------------------
 def run_bifurcation(
     m: float,
     d1: float,
     d2: float,
-    Lx: float = 10,
-    Ly: float = 10,
-    Nx: int = 30,
-    Ny: int = 30,
+    lx: float = 10,
+    ly: float = 10,
+    nx: int = 30,
+    ny: int = 30,
     ht: float = 0.025,
-    krok_max: int = 500,
+    max_steps: int = 500,
     eps: float = 1e-8,
     ha: float = 5e-4,
     amax_factor: float = 4,
@@ -137,73 +163,86 @@ def run_bifurcation(
     store_down_states: bool = True,
 ):
     """
-    Wykonuje pełną analizę bifurkacyjną względem parametru a.
+    Performs full bifurcation analysis with respect to parameter ``a``.
 
-    Algorytm:
-        1. Generacja siatki przestrzennej oraz maski Dirichleta.
-        2. Faktoryzacja macierzy dyfuzji (schemat niejawny).
-        3. Kontynuacja dla malejących wartości a (przejście „w dół”).
-        4. Identyfikacja punktu krytycznego (tipping point)
-           na podstawie największego skoku max(v).
-        5. Kontynuacja dla rosnących wartości a
-           (przejście „w górę” z okolic punktu krytycznego).
+    Algorithm:
+        1. Generates the spatial grid and Dirichlet boundary mask.
+        2. Precomputes LU factorizations for the diffusion part.
+        3. Performs continuation for decreasing values of ``a``.
+        4. Identifies the tipping point based on the largest jump in ``max(v)``.
+        5. Performs continuation for increasing values of ``a``,
+           starting from a state located just above the tipping point.
 
-    Parametry
-    m : float
-        Parametr śmiertelności biomasy.
-    d1, d2 : float
-        Współczynniki dyfuzji.
-    Lx, Ly : float
-        Wymiary domeny przestrzennej.
-    Nx, Ny : int
-        Liczba wartości dla x i y.
+    Parameters
+    m, d1, d2 : float
+        Model parameters.
+    lx, ly : float
+        Dimensions of the spatial domain.
+    nx, ny : int
+        Number of grid points in each dimension.
     ht : float
-        Krok czasowy.
-    krok_max : int
-        Maksymalna liczba iteracji w solverze stanu stacjonarnego.
+        Time step.
+    max_steps : int
+        Maximum number of iterations in the steady-state solver.
     eps : float
-        Tolerancja zbieżności.
+        Convergence tolerance.
     ha : float
-        Krok parametru a w procedurze kontynuacji.
+        Step of parameter ``a`` in the continuation procedure.
     amax_factor : float
-        Współczynnik wyznaczający maksymalną wartość parametru:
-            a_max = amax_factor * m.
+        Factor determining the maximal parameter value:
+        ``a_max = amax_factor * m``.
     a_max : float | None = None,
-        Jeżeli none, stosujemy amax_factor. W przeciwnym przypadku, dobieramy je jawnie
+        If ``None``, the value ``amax_factor * m`` is used.
+        Otherwise, the maximal value of the parameter is prescribed explicitly.
+    store_down_states : bool, default=True
+        Whether to store full states for the decreasing branch.
 
-    Zwraca
-        - serie parametrów (a_down, a_up),
-        - odpowiadające średnie i maksima biomasy,
-        - przybliżony punkt krytyczny tp,
-        - indeks skoku tp_idx,
-        - indeksy lokalnych maksimów peak_idx dla serii down_max,
-        - wartość referencyjną a = 2m,
-        - informacje o siatce i parametrach numerycznych.
+    Returns
+    dict
+        Dictionary containing:
+        - parameter series ``a_down`` and ``a_up``,
+        - corresponding biomass averages and maxima,
+        - approximate tipping point ``tp``,
+        - index of the jump ``tp_idx``,
+        - reference value ``a = 2m``,
+        - grid and numerical parameter information.
     """
+    if nx <= 1 or ny <= 1:
+        raise ValueError("nx and ny must be greater than 1")
+    if ht <= 0:
+        raise ValueError("ht must be positive")
+    if ha <= 0:
+        raise ValueError("ha must be positive")
+    if max_steps <= 0:
+        raise ValueError("max_steps must be positive")
+    if eps <= 0:
+        raise ValueError("eps must be positive")
+
     if a_max is None:
         amax = amax_factor * m
     else:
         if a_max <= 0:
-            raise ValueError("a_max musi być dodatnie")
+            raise ValueError("a_max must be positive")
         amax = a_max
 
-    # siatka i brzeg
-    _, _, X, Y, h = make_grid(Lx, Ly, Nx, Ny)
-    brzeg = dirichlet_boundary_mask(X, Y, Lx, Ly)
+    # Grid construction and Dirichlet boundary mask
+    _, _, X, Y, h = make_grid(lx, ly, nx, ny)
+    boundary_mask = dirichlet_boundary_mask(X, Y, lx, ly)
 
-    # LU dla dyfuzji
-    lu_Au, lu_Av = precompute_diffusion(Nx, Ny, h, ht, d1, d2)
+    # LU factorizations for the diffusion part
+    lu_Au, lu_Av = precompute_diffusion(nx, ny, h, ht, d1, d2)
 
-    # a malejące
+    # Parameter values for the decreasing branch
     a_down = np.arange(amax, 0, -ha)
 
-    # start na równowadze ODE dla amax
-    v0 = v_stac(a_down[0], m)
-    u0 = u_stac(v0, m)
-    u_init = np.full(Nx * Ny, u0)
-    v_init = np.full(Nx * Ny, v0)
-    u_init[brzeg] = 0
-    v_init[brzeg] = 0
+    # Start from the homogeneous ODE equilibrium for the largest a
+    v0 = v_steady(a_down[0], m)
+    u0 = u_steady(v0, m)
+    
+    u_init = np.full(nx * ny, u0)
+    v_init = np.full(nx * ny, v0)
+    u_init[boundary_mask] = 0
+    v_init[boundary_mask] = 0
 
     down = continuation_sweep(
         a_values=a_down,
@@ -213,19 +252,20 @@ def run_bifurcation(
         ht=ht,
         lu_Au=lu_Au,
         lu_Av=lu_Av,
-        brzeg=brzeg,
-        krok_max=krok_max,
+        boundary_mask=boundary_mask,
+        max_steps=max_steps,
         eps=eps,
         store_states=store_down_states,
     )
 
-    tp, idx = estimate_tipping_point(a_down, down["max"])
+    tipping_point, tp_idx = estimate_tipping_point(a_down, down["max"])
 
-    # stan startowy "tuż nad" tp
-    idx_c = np.where(a_down > tp)[0][-1]
-    u_start, v_start = down["states"][idx_c]
+    # Initial state for the increasing branch: state just above tp
+    idx_start = np.where(a_down > tipping_point)[0][-1]
+    u_start, v_start = down["states"][idx_start]
 
-    a_up = np.arange(tp, amax, ha)
+    # Parameter values for the increasing branch
+    a_up = np.arange(tipping_point, amax, ha)
 
     up = continuation_sweep(
         a_values=a_up,
@@ -235,8 +275,8 @@ def run_bifurcation(
         ht=ht,
         lu_Au=lu_Au,
         lu_Av=lu_Av,
-        brzeg=brzeg,
-        krok_max=krok_max,
+        boundary_mask=boundary_mask,
+        max_steps=max_steps,
         eps=eps,
         store_states=store_down_states,
     )
@@ -248,38 +288,48 @@ def run_bifurcation(
         "a_up": a_up,
         "up_avg": up["avg"],
         "up_max": up["max"],
-        "tp": tp,
-        "tp_idx": idx,
+        "tp": tipping_point,
+        "tp_idx": tp_idx,
         "a_2m": 2.0 * m,
-        "brzeg": brzeg,
-        "grid": {"Lx": Lx, "Ly": Ly, "Nx": Nx, "Ny": Ny, "h": h},
-        "params": {"m": m, "d1": d1, "d2": d2, "ht": ht, "krok_max": krok_max, "eps": eps, "ha": ha},
+        "brzeg": boundary_mask,
+        "grid": {"lx": lx, "ly": ly, "nx": nx, "ny": ny, "h": h},
+        "params": {"m": m, "d1": d1, "d2": d2, "ht": ht, "max_steps": max_steps, "eps": eps, "ha": ha},
     }
 
-# ---------------------------------------
-# Wykres
-# ---------------------------------------
-def plot_bifurcation(result: dict, title: str | None = None, show: bool = True, ax=None):
+# -------------------------------------
+# Plot of the full bifurcation diagram
+# -------------------------------------
+def plot_bifurcation(
+        result: dict,
+        title: str | None = None,
+        show: bool = True,
+        ax=None,
+):
     """
-    Wizualizuje diagram bifurkacyjny względem parametru a.
+    Plots the bifurcation diagram with respect to parameter ``a``.
 
-    Na wykresie dla przejścia w dół (a malejące) oraz w górę (a rosnące) przedstawiane są:
-        - średnia przestrzenna biomasy μ_v,
-        - maksimum przestrzenne biomasy max(v),
-        - wartość referencyjna a = 2m,
-        - przybliżony punkt krytyczny (tipping point).
+    For the decreasing branch (``a`` decreasing) and increasing branch
+    (``a`` increasing), the following quantities are shown:
+        - spatial average of biomass,
+        - spatial maximum of biomass,
+        - reference value ``a = 2m``,
+        - approximate tipping point.
 
-    Parametry
+
+    Parameters
     result : dict
-        parametry zwrócone przez funkcję run_bifurcation.
-    title : str | None
-        Tytuł wykresu.
-    show : bool
-        Czy wywołać plt.show().
-    ax : matplotlib.axes.Axes | None
-        Oś, na której ma zostać narysowany wykres.
-    """
+        Dictionary returned by ``run_bifurcation``.
+    title : str | None, default=None
+        Plot title.
+    show : bool, default=True
+        Whether to call ``plt.show()``.
+    ax : matplotlib.axes.Axes | None, default=None
+        Axis on which the plot should be drawn.
 
+    Returns
+    matplotlib.axes.Axes
+        Axis with the plotted bifurcation diagram.
+    """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 5))
     else:
@@ -288,22 +338,22 @@ def plot_bifurcation(result: dict, title: str | None = None, show: bool = True, 
     a_down = result["a_down"]
     a_up = result["a_up"]
 
-    ax.scatter(a_down, result["down_avg"], s=8, color="cyan", label=r"$v_{avg}$ dla a$\downarrow$")
-    ax.scatter(a_down, result["down_max"], s=8, color="blue", label=r"$v_{\max}$ dla a$\downarrow$")
+    ax.scatter(a_down, result["down_avg"], s=8, color="cyan", label=r"$v_{avg}$ for a$\downarrow$")
+    ax.scatter(a_down, result["down_max"], s=8, color="blue", label=r"$v_{\max}$ for a$\downarrow$")
 
-    ax.scatter(a_up, result["up_avg"], s=8, color="red", label=r"$v_{avg}$ dla a$\uparrow$")
-    ax.scatter(a_up, result["up_max"], s=8, color="orange", label=r"$v_{\max}$ dla a$\uparrow$")
+    ax.scatter(a_up, result["up_avg"], s=8, color="red", label=r"$v_{avg}$ for a$\uparrow$")
+    ax.scatter(a_up, result["up_max"], s=8, color="orange", label=r"$v_{\max}$ for a$\uparrow$")
 
-    ax.axvline(x=result["a_2m"], color="black", linestyle=":", linewidth=2, label="a = 2m")
-    ax.axvline(x=result["tp"], color="purple", linestyle=":", linewidth=2, label=rf"$tp \approx {result['tp']:.4f}$")
+    ax.axvline(x=result["a_2m"], color="black", linestyle=":", label="a = 2m")
+    ax.axvline(x=result["tp"], color="purple", linestyle=":", label=rf"$tp \approx {result['tp']:.4f}$")
 
     ax.set_xlabel(r"$a$")
-    ax.set_ylabel("Biomasa w stanie stacjonarnym")
+    ax.set_ylabel("Biomass in the stationary state")
 
     if title is None:
-        title = rf"Diagram bifurkacyjny dla $d_1 = {result['params']['d1']:.2f}$"
-    ax.set_title(title)
+        title = rf"Bifurcation diagram for $d_1 = {result['params']['d1']:.2f}$"
 
+    ax.set_title(title)
     ax.legend()
     ax.grid(True)
     fig.tight_layout()
@@ -313,19 +363,19 @@ def plot_bifurcation(result: dict, title: str | None = None, show: bool = True, 
 
     return ax
 
-# ---------------------------------------
-# Symulacja bifurkacyjna z malejącym a
-# ---------------------------------------
+# -------------------------------------------
+# Bifurcation analysis for decreasing a only
+# -------------------------------------------
 def run_bifurcation_down(
     m: float,
     d1: float,
     d2: float,
-    Lx: float = 10,
-    Ly: float = 10,
-    Nx: int = 30,
-    Ny: int = 30,
+    lx: float = 10,
+    ly: float = 10,
+    nx: int = 30,
+    ny: int = 30,
     ht: float = 0.025,
-    krok_max: int = 200,
+    max_steps: int = 200,
     eps: float = 1e-5,
     ha: float = 5e-4,
     amax_factor: float = 4,
@@ -333,75 +383,89 @@ def run_bifurcation_down(
     store_down_states: bool = False,
 ):
     """
-    Wykonuje analizę bifurkacyjną względem parametru a
-    wyłącznie dla malejących wartości a.
+    Performs bifurcation analysis with respect to parameter ``a``
+    only for decreasing values.
 
-    Algorytm:
-        1. Generacja siatki przestrzennej oraz maski Dirichleta.
-        2. Faktoryzacja macierzy dyfuzji (schemat niejawny).
-        3. Kontynuacja dla malejących wartości a.
-        4. Identyfikacja punktu krytycznego (tipping point)
-           na podstawie największego skoku max(v).
-        5. Wyznaczenie lokalnych maksimów serii down_max.
+    Algorithm:
+        1. Generates the spatial grid and Dirichlet boundary mask.
+        2. Precomputes LU factorizations for the diffusion part.
+        3. Performs continuation for decreasing values of ``a``.
+        4. Identifies the tipping point based on the largest jump in ``max(v)``.
+        5. Detects discrete local maxima of the ``down_max`` series.
 
-    Parametry
-    m : float
-        Parametr śmiertelności biomasy.
-    d1, d2 : float
-        Współczynniki dyfuzji.
-    Lx, Ly : float
-        Wymiary domeny przestrzennej.
-    Nx, Ny : int
-        Liczba wartości dla x i y.
+    Parameters
+    m, d1, d2 : float
+        Model parameters.
+    lx, ly : float
+        Dimensions of the spatial domain.
+    nx, ny : int
+        Number of grid points in each dimension.
     ht : float
-        Krok czasowy.
+        Time step.
     krok_max : int
-        Maksymalna liczba iteracji w solverze stanu stacjonarnego.
+        Maximum number of iterations in the steady-state solver.
     eps : float
-        Tolerancja zbieżności.
+        Convergence tolerance
     ha : float
-        Krok parametru a w procedurze kontynuacji.
+        Step of parameter ``a`` in the continuation procedure.
     amax_factor : float
-        Współczynnik wyznaczający maksymalną wartość parametru:
-            a_max = amax_factor * m.
+        Factor determining the maximal parameter value:
+        ``a_max = amax_factor * m``.
     a_max : float | None = None,
-        Jeżeli none, stosujemy amax_factor. W przeciwnym przypadku, dobieramy je jawnie
+        If ``None``, the value ``amax_factor * m`` is used.
+        Otherwise, the maximal value of the parameter is prescribed explicitly.
     store_down_states : bool
-        Czy zapisywać pełne stany dla gałęzi malejącej.
+        Whether to store full states for the decreasing branch.
 
     Zwraca
-        - serie parametrów a_down,
-        - odpowiadające średnie i maksima biomasy,
-        - przybliżony punkt krytyczny tp,
-        - indeks skoku tp_idx,
-        - indeksy lokalnych maksimów peak_idx dla serii down_max,
-        - wartość referencyjną a = 2m,
-        - informacje o siatce i parametrach numerycznych.
+    dict
+        Dictionary containing:
+        - parameter series ``a_down``,
+        - corresponding biomass averages and maxima,
+        - approximate tipping point ``tp``,
+        - jump index ``tp_idx``,
+        - indices of local maxima ``peak_idx``,
+        - logical mask ``peak_mask``,
+        - optionally stored states,
+        - reference value ``a = 2m``,
+        - grid and numerical parameter information.
     """
+    if nx <= 1 or ny <= 1:
+        raise ValueError("nx and ny must be greater than 1")
+    if ht <= 0:
+        raise ValueError("ht must be positive")
+    if ha <= 0:
+        raise ValueError("ha must be positive")
+    if max_steps <= 0:
+        raise ValueError("max_steps must be positive")
+    if eps <= 0:
+        raise ValueError("eps must be positive")
+    
     if a_max is None:
         amax = amax_factor * m
     else:
         if a_max <= 0:
-            raise ValueError("a_max musi być dodatnie")
+            raise ValueError("a_max must be positive")
         amax = a_max
 
-    # siatka i brzeg
-    _, _, X, Y, h = make_grid(Lx, Ly, Nx, Ny)
-    brzeg = dirichlet_boundary_mask(X, Y, Lx, Ly)
+    # Grid construction and Dirichlet boundary mask
+    _, _, X, Y, h = make_grid(lx, ly, nx, ny)
+    boundary_mask = dirichlet_boundary_mask(X, Y, lx, ly)
 
-    # LU dla dyfuzji
-    lu_Au, lu_Av = precompute_diffusion(Nx, Ny, h, ht, d1, d2)
+    # LU factorizations for the diffusion part
+    lu_Au, lu_Av = precompute_diffusion(nx, ny, h, ht, d1, d2)
 
-    # a malejące
+    # Parameter values for the decreasing branch
     a_down = np.arange(amax, 0, -ha)
 
-    # start na równowadze ODE dla amax
-    v0 = v_stac(a_down[0], m)
-    u0 = u_stac(v0, m)
-    u_init = np.full(Nx * Ny, u0)
-    v_init = np.full(Nx * Ny, v0)
-    u_init[brzeg] = 0
-    v_init[brzeg] = 0
+    # Start from the homogeneous ODE equilibrium for the largest a
+    v0 = v_steady(a_down[0], m)
+    u0 = u_steady(v0, m)
+
+    u_init = np.full(nx * ny, u0)
+    v_init = np.full(nx * ny, v0)
+    u_init[boundary_mask] = 0
+    v_init[boundary_mask] = 0
 
     down = continuation_sweep(
         a_values=a_down,
@@ -411,13 +475,13 @@ def run_bifurcation_down(
         ht=ht,
         lu_Au=lu_Au,
         lu_Av=lu_Av,
-        brzeg=brzeg,
-        krok_max=krok_max,
+        boundary_mask=boundary_mask,
+        boundary_mask=boundary_mask,
         eps=eps,
         store_states=store_down_states,
     )
 
-    tp, idx = estimate_tipping_point(a_down, down["max"])
+    tipping_point, tp_idx = estimate_tipping_point(a_down, down["max"])
 
     max_series = down["max"]
     peak_idx = np.where(
@@ -432,21 +496,20 @@ def run_bifurcation_down(
         "a_down": a_down,
         "down_avg": down["avg"],
         "down_max": down["max"],
-        "tp": tp,
-        "tp_idx": idx,
+        "tp": tipping_point,
+        "tp_idx": tp_idx,
         "peak_idx": peak_idx,
         "peak_mask": peak_mask,
         "down_states": down["states"] if store_down_states else None,
         "a_2m": 2.0 * m,
-        "brzeg": brzeg,
-        "grid": {"Lx": Lx, "Ly": Ly, "Nx": Nx, "Ny": Ny, "h": h},
-        "params": {"m": m, "d1": d1, "d2": d2, "ht": ht, "krok_max": krok_max, "eps": eps, "ha": ha},
+        "boundary_mask": boundary_mask,
+        "grid": {"lx": lx, "ly": ly, "nx": nx, "ny": ny, "h": h},
+        "params": {"m": m, "d1": d1, "d2": d2, "ht": ht, "krok_max": max_steps, "eps": eps, "ha": ha},
     }
 
-
-# --------------------------------------------------
-# Bifurkacja dla symulacji z malejącym a
-# --------------------------------------------------
+# -------------------------------------------------
+# Plot of the bifurcation diagram for decreasing a
+# -------------------------------------------------
 def plot_bifurcation_down(
     result: dict,
     title: str | None = None,
@@ -455,53 +518,61 @@ def plot_bifurcation_down(
     show_peaks: bool = True,
 ):
     """
-    Rysuje diagram bifurkacyjny tylko dla przejścia z dużego a w dół.
+    Plots the bifurcation diagram only for the branch
+    corresponding to decreasing values of ``a``.
 
-    Parametry
+    Parameters
     result : dict
-        parametry zwrócone przez funkcję run_bifurcation.
+        Dictionary returned by ``run_bifurcation_down``.
     title : str | None
-        Tytuł wykresu.
+        Plot title.
     show : bool
-        Czy wywołać plt.show().
+        Whether to call ``plt.show()``.
     ax : matplotlib.axes.Axes | None
-        Oś, na której ma zostać narysowany wykres.
+        Axis on which the plot should be drawn.
+    show_peaks : bool, default=True
+        Whether to mark local maxima of the ``down_max`` series.
+
+    Returns
+    matplotlib.axes.Axes
+        Axis with the plotted bifurcation diagram.
     """
     created_ax = ax is None
+
     if ax is None:
         fig, ax = plt.subplots(figsize=(8,5))
     else:
         fig = ax.figure
 
     a_down = result["a_down"]
-    avg = result["down_avg"]
-    maxv = result["down_max"]
+    avg_values = result["down_avg"]
+    max_values = result["down_max"]
     params = result["params"]
 
-    ax.scatter(a_down, avg, s=8, color="black", label=r"$v_{avg}$")
-    ax.scatter(a_down, maxv, s=8, color="green", label=r"$v_{max}$")
+    ax.scatter(a_down, avg_values, s=8, color="black", label=r"$v_{\mathrm{avg}}$")
+    ax.scatter(a_down, max_values, s=8, color="green", label=r"$v_{max}$")
 
-    # peaki (potencjalnie ciekawe punkty)
+    # Local maxima of max(v)
     if show_peaks and "peak_mask" in result:
-        mask = result["peak_mask"]
+        peak_mask = result["peak_mask"]
         ax.scatter(
-            a_down[mask],
-            maxv[mask],
+            a_down[peak_mask],
+            max_values[peak_mask],
             s=20,
             color="red",
             zorder=3,
-            label="peaki"
+            label="local maxima"
         )
 
-    # linie referencyjne
-    ax.axvline(result["a_2m"], linestyle=":", color="black", label="a = 2m")
+    # Reference lines
+    ax.axvline(result["a_2m"], linestyle=":", color="black", label=r"$a = 2m$")
 
     if result.get("tp") is not None:
         ax.axvline(result["tp"], linestyle=":", color="purple",
                    label=rf"$tp \approx {result['tp']:.4f}$")
 
     ax.set_xlabel("a")
-    ax.set_ylabel("Biomasa w stanie stacjonarnym")
+    ax.set_ylabel("Biomass in the stationary state")
 
     if title is None:
         title = rf"$d_1={params['d1']:.6f},\ d_2={params['d2']:.6f}$"
@@ -513,5 +584,5 @@ def plot_bifurcation_down(
 
     if show and created_ax:
         plt.show()
-    return ax
 
+    return ax

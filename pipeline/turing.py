@@ -1,182 +1,197 @@
 import numpy as np
 import matplotlib.pyplot as plt
+
 from pipeline.core import (
     homogeneous_state,
     check_ode_stability
 )
 
-# --------------------------------------------------
-# Relacja dyspersji
-# --------------------------------------------------
-def dispersion(J: np.ndarray, d1: float, d2: float,
-            k_min: float = 0, k_max: float = 5, n_k: int = 1000):
+# --------------------
+# Dispersion relation
+# --------------------
+def dispersion_relation(
+    jacobian_matrix: np.ndarray,
+    d1: float,
+    d2: float,
+    k_min: float = 0,
+    k_max: float = 5,
+    n_k: int = 1000,
+):
     """
-    Oblicza relację dyspersji λ_max(k).
+    Computes the dispersion relation ``lambda_max(k)``.
 
-    Algorytm:
-        Dla każdego k liczone są wartości własne macierzy J - k^2 D
-        i wybierana jest największa część rzeczywista.
+    Algorithm:
+    For each value of ``k``, the eigenvalues of the matrix
+        J - k^2 D
+    are computed, and the largest real part is selected.
 
-    Parametry
-    J : ndarray (2x2)
-        Jacobian reakcji.
+    Parameters
+    jacobian_matrix : np.ndarray
+        Reaction Jacobian matrix of shape ``(2, 2)``.
     d1, d2 : float
-        Współczynniki dyfuzji.
-    k_min, k_max : float
-        Zakres analizowanych k.
+        Diffusion coefficients.
+    k_min, k_max : float, default=0
+        Bounds of the analyzed wavenumber range.
     n_k : int
-        Liczba równomiernie rozłożonych punktów k.
+        Number of uniformly spaced wavenumber values.
 
-    Zwraca
-        k_vals : ndarray
-            Wartości k.
-        lambda_max : ndarray
-            Największa część rzeczywista λ(k).
+    Returns
+    tuple[np.ndarray, np.ndarray]
+        Pair ``(k_values, lambda_max)``, where:
+        - ``k_values`` is the array of wavenumbers,
+        - ``lambda_max`` is the array of maximal real parts of eigenvalues.
     """
-    k_vals = np.linspace(k_min, k_max, n_k)
-    lambda_max = np.zeros_like(k_vals)
+    k_values = np.linspace(k_min, k_max, n_k)
+    lambda_max = np.zeros_like(k_values)
 
     # macierz dyfuzji
-    D = np.diag([d1, d2])
+    diffusion_matrix = np.diag([d1, d2])
 
-    for i, k in enumerate(k_vals):
-        M = J - (k**2) * D
-        # wartosci własne
-        eig_vals = np.linalg.eigvals(M)
-        # maksymalna część rzeczywista
-        lambda_max[i] = np.max(np.real(eig_vals))
+    for i, k in enumerate(k_values):
+        matrix = jacobian_matrix - (k**2) * diffusion_matrix
+        eigenvalues = np.linalg.eigvals(matrix)
+        lambda_max[i] = np.max(np.real(eigenvalues))
 
-    return k_vals, lambda_max
+    return k_values, lambda_max
 
-# --------------------------------------------------
-# Pasmo Turinga
-# --------------------------------------------------
-def turing_band(k_vals: np.ndarray, lambda_max: np.ndarray):
+# ------------
+# Turing band
+# ------------
+def turing_band(k_values: np.ndarray, lambda_max: np.ndarray):
     """
-    Wyznacza punkty niestabilne k (pasmo Turinga).
+    Determines the unstable wavenumbers forming the Turing band.
 
-    Parametry
-    k_vals : ndarray
-    lambda_max : ndarray
-        Największa część rzeczywista λ(k).
+    Parameters
+    k_values : np.ndarray
+        Array of analyzed wavenumbers.
+    lambda_max : np.ndarray
+        Maximal real part of the dispersion relation.
 
-    Zwraca
-        Jeśli istnieje niestabilność:
-            {
-                "k_min" : początek pasma,
-                "k_max" : koniec pasma,
-                "k_dom" : globalne maksimum relacji dyspersji
-            }
-        W przeciwnym razie None.
+    Returns
+    dict or None
+        If instability exists, returns a dictionary with:
+        - ``"k_min"`` : left endpoint of the unstable band,
+        - ``"k_max"`` : right endpoint of the unstable band,
+        - ``"k_dom"`` : wavenumber corresponding to the global maximum
+          of the dispersion relation.
+
+        Otherwise returns ``None``.
     """
-    unstable = k_vals[lambda_max > 0]
+    unstable_k = k_values[lambda_max > 0]
 
-    if unstable.size == 0:
+    if unstable_k.size == 0:
         return None
 
     return {
-        "k_min": unstable.min(),
-        "k_max": unstable.max(),
-        "k_dom": k_vals[np.argmax(lambda_max)]
+        "k_min": unstable_k.min(),
+        "k_max": unstable_k.max(),
+        "k_dom": k_values[np.argmax(lambda_max)]
     }
 
-# --------------------------------------------------
-# Analiza Turinga
-# --------------------------------------------------
-def turing_analysis(a: float, m: float, d1: float, d2: float,
-                    k_min: float = 0, k_max: float = 5, n_k: int = 1000):
+# ----------------
+# Turing analysis
+# ----------------
+def turing_analysis(
+    a: float,
+    m: float,
+    d1: float,
+    d2: float,
+    k_min: float = 0,
+    k_max: float = 5,
+    n_k: int = 1000,
+):
     """
-     Analiza niestabilności Turinga.
+    Performs Turing instability analysis.
 
-    Algorytm:
-        1. Wyznaczenie punktu jednorodnego.
-        2. Sprawdzenie stabilności ODE.
-        3. Obliczenie relacji dyspersji λ(k) (stabilny -> niestabilny po dodaniu dyfuzji).
-        4. Wyznaczenie pasma niestabilnych k.
+    Algorithm
+    1. Computes the homogeneous stationary state.
+    2. Checks ODE stability.
+    3. Computes the dispersion relation ``lambda(k)``.
+    4. Determines the unstable Turing band.
 
-    Parametry
-    a : float
-        Parametr zasobu wody.
-    m : float
-        Parametr śmiertelności.
-    d1, d2 : float
-        Współczynniki dyfuzji.
+    Parameters
+    a, m, d1, d2 : float
+        Model parameters.
     k_min, k_max : float
-        Zakres analizowanych k.
+        Bounds of the analyzed wavenumber range.
     n_k : int
-        Liczba punktów k.
+        Number of analyzed wavenumber values.
 
-    Zwraca
-        - J : Jacobian
-        - k : wartości k
-        - lambda : λ_max(k)
-        - band : zakres pasma niestabilności (lub None)
+    Returns
+    dict
+        Dictionary containing:
+        - ``"J"``      : Jacobian matrix,
+        - ``"k"``      : array of wavenumbers,
+        - ``"lambda"`` : maximal real part of eigenvalues,
+        - ``"band"``   : unstable Turing band or ``None``.
     """
-
-    # stabilność ODE
-    stable, J = check_ode_stability(a, m)
+    stable, jacobian_matrix = check_ode_stability(a, m)
 
     if not stable:
-        raise ValueError("Układ reakcyjny niestabilny — brak Turinga")
+        raise ValueError("Reaction system is unstable — no Turing instability")
 
-    # relacja dyspersji
-    k_vals, lambda_max = dispersion(J, d1, d2, k_min, k_max, n_k)
+    k_values, lambda_max = dispersion_relation(
+        jacobian_matrix,
+        d1, d2,
+        k_min, k_max,
+        n_k
+    )
 
-    # pasmo Turinga
-    band = turing_band(k_vals, lambda_max)
+    band = turing_band(k_values, lambda_max)
 
     return {
-        "J": J,
-        "k": k_vals,
+        "J": jacobian_matrix,
+        "k": k_values,
         "lambda": lambda_max,
-        "band": band
+        "band": band,
     }
 
-# --------------------------------------------------
-# Wykres
-# --------------------------------------------------
-def plot_dispersion(k_vals: np.ndarray, lambda_max: np.ndarray, band: dict):
+# ----------------
+# Dispersion plot
+# ----------------
+def plot_dispersion(k_values: np.ndarray, lambda_max: np.ndarray, band: dict):
     """
-    Rysuje relację dyspersji λ(k) z zaznaczonym pasmem Turinga.
+    Plots the dispersion relation ``lambda(k)`` together with
+    the marked Turing band.
 
-    Parametry
-    k_vals : ndarray
-    lambda_max : ndarray
-        Największa część rzeczywista λ(k).
+    Parameters
+    k_values : np.ndarray
+        Array of analyzed wavenumbers.
+    lambda_max : np.ndarray
+        Maximal real part of the dispersion relation.
+    band : dict
+        Dictionary describing the Turing band.
     """
     plt.figure(figsize=(8,5))
-    # krzywa dyspersji
-    plt.plot(k_vals, lambda_max, color = "navy")
+
+    plt.plot(k_values, lambda_max, color = "navy")
     plt.axhline(0, color = "black")
 
-    # Zaznaczanie punktów kluczowych dla pasma Turinga w postaci:
-    # punkty szczególne k na osi x
-    # wysokość wykresu dokładnie w n_k miejscu na osi y (interpolacja liniowa)
-    k_min = band["k_min"]
-    l_min = np.interp(k_min, k_vals, lambda_max)
+    k_left = band["k_min"]
+    lambda_left = np.interp(k_left, k_values, lambda_max)
 
-    k_max = band["k_max"]
-    l_max = np.interp(k_max, k_vals, lambda_max)
+    k_right = band["k_max"]
+    lambda_right = np.interp(k_max, k_values, lambda_max)
 
     k_dom = band["k_dom"]
-    l_dom = np.interp(k_dom, k_vals, lambda_max)
+    lambda_dom = np.interp(k_dom, k_values, lambda_max)
 
-    plt.axvline(k_min, linestyle = ":", color = "gray", label = "k_min")
-    plt.axvline(k_max, linestyle = ":", color = "gray", label = "k_max")
+    plt.axvline(k_left, linestyle = ":", color = "gray", label = "k_min")
+    plt.axvline(k_right, linestyle = ":", color = "gray", label = "k_max")
     plt.axvline(k_dom, linestyle = "--", color = "gray", label = "k_dom")
 
-    plt.scatter([k_min, k_max, k_dom], [l_min, l_max, l_dom], zorder=5)
+    plt.scatter([k_left, k_right, k_dom], [lambda_left, lambda_right, lambda_dom], zorder=5)
 
     plt.xlabel("k")
-    plt.ylabel("max Re(λ(k))")
-    plt.title("Relacja dyspersji – analiza Turinga")
+    plt.ylabel(r"max Re($\lambda(k)$)")
+    plt.title("Dispersion relation – Turing analysis")
     plt.legend()
     plt.tight_layout()
     plt.show()
 
-# --------------------------------------------------
-# Analiza Turinga
-# --------------------------------------------------
+# ----------------------------------
+# Turing scan over the (a, m) plane
+# ----------------------------------
 def scan_turing_am(
     d1,
     d2,
@@ -187,12 +202,12 @@ def scan_turing_am(
     n_k=4000,
 ):
     """
-    Skanuje płaszczyznę (a, m) dla ustalonych dyfuzji d1, d2.
+    Scans the ``(a, m)`` plane for fixed diffusion coefficients ``d1`` and ``d2``.
 
-    Zwraca listę słowników z informacją o:
-    - istnieniu stanu jednorodnego,
-    - max Re(lambda),
-    - pasmie Turinga.
+    Returns a list of dictionaries containing information about:
+    - existence of a homogeneous state,
+    - maximal value of ``Re(lambda)``,
+    - Turing band information.
     """
     results = []
 
@@ -203,7 +218,7 @@ def scan_turing_am(
             except:
                 u_star, v_star = np.nan, np.nan
 
-            # pomijamy przypadki bez sensownego dodatniego stanu
+            # Skip cases without a meaningful positive state
             if not np.isfinite(u_star) or not np.isfinite(v_star) or v_star <= 1:
                 results.append({
                     "a": a,
@@ -236,12 +251,12 @@ def scan_turing_am(
                 })
                 continue
 
-            lam = res.get("lambda", None)
+            lambda_values = res.get("lambda", None)
             band = res.get("band", None)
 
             lambda_max = np.nan
-            if lam is not None:
-                lambda_max = np.max(np.real(lam))
+            if lambda_values is not None:
+                lambda_max = np.max(np.real(lambda_values))
 
             k_left = np.nan
             k_right = np.nan
@@ -273,36 +288,57 @@ def scan_turing_am(
 
 def unpack_scan_results(results):
     """
-    Zamienia listę słowników na tablice numpy. (uwaga A != wymiarowe A)
+    Converts the list of dictionaries returned by ``scan_turing_am``
+    into NumPy arrays.
     """
-    A = np.array([r["a"] for r in results])
-    M = np.array([r["m"] for r in results])
-    S = np.array([r["has_state"] for r in results])
-    T = np.array([r["has_turing"] for r in results])
-    L = np.array([r["lambda_max"] for r in results])
-    V = np.array([r["v_star"] for r in results])
-    K1 = np.array([r["k_left"] for r in results])
-    K2 = np.array([r["k_right"] for r in results])
-    KD = np.array([r["k_dom"] for r in results])
+    a_array = np.array([r["a"] for r in results])
+    m_array = np.array([r["m"] for r in results])
+    has_state_array = np.array([r["has_state"] for r in results])
+    has_turing_array = np.array([r["has_turing"] for r in results])
+    lambda_max_array = np.array([r["lambda_max"] for r in results])
+    v_star_array = np.array([r["v_star"] for r in results])
+    k_left_array = np.array([r["k_left"] for r in results])
+    k_right_array = np.array([r["k_right"] for r in results])
+    k_dom_array = np.array([r["k_dom"] for r in results])
 
-    return A, M, S, T, L, V, K1, K2, KD
+    return (
+        a_array,
+        m_array,
+        has_state_array,
+        has_turing_array,
+        lambda_max_array,
+        v_star_array,
+        k_left_array,
+        k_right_array,
+        k_dom_array,
+    )
 
 def plot_lambda_map(results, ax=None):
     """
-    Rysuje mapę max Re(lambda) w płaszczyźnie (a, m).
+    Plots the map of ``max Re(lambda)`` in the ``(a, m)`` plane.
     """
-    A, M, S, T, L, V, K1, K2, KD = unpack_scan_results(results)
+    (
+        a_array,
+        m_array,
+        has_state_array,
+        has_turing_array,
+        lambda_max_array,
+        v_star_array,
+        k_left_array,
+        k_right_array,
+        k_dom_array,
+    ) = unpack_scan_results(results)
 
-    mask = np.isfinite(L)
+    mask = np.isfinite(lambda_max_array)
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 5))
 
-    sc = ax.scatter(A[mask], M[mask], c=L[mask], s=18)
-    plt.colorbar(sc, ax=ax, label=r"maxRe($\lambda$)")
+    scatter = ax.scatter(a_array[mask], m_array[mask], c=lambda_max_array[mask], s=18)
+    plt.colorbar(scatter, ax=ax, label=r"maxRe($\lambda$)")
     ax.set_xlabel("a")
     ax.set_ylabel("m")
-    ax.set_title(r"Mapa wartości maxRe($\lambda$)")
+    ax.set_title(r"Map of max Re($\lambda$)")
     ax.grid(True, alpha=0.3)
 
 def plot_turing_regions(results, ax = None):
@@ -312,30 +348,48 @@ def plot_turing_regions(results, ax = None):
     - stan stabilny,
     - obszar Turinga.
     """
-    A, M, S, T, L, V, K1, K2, KD = unpack_scan_results(results)
+    (
+        a_array,
+        m_array,
+        has_state_array,
+        has_turing_array,
+        lambda_max_array,
+        v_star_array,
+        k_left_array,
+        k_right_array,
+        k_dom_array,
+    ) = unpack_scan_results(results)
 
-    mask_no_state = (S == 0)
-    mask_state_no_turing = (S == 1) & (T == 0)
-    mask_turing = (T == 1)
+    mask_no_state = (has_state_array == 0)
+    mask_state_no_turing = (has_state_array  == 1) & (has_turing_array == 0)
+    mask_turing = (has_turing_array == 1)
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 5))
 
-    ax.scatter(A[mask_no_state], M[mask_no_state], s=8, alpha=0.35, label="brak stanu")
-    ax.scatter(A[mask_state_no_turing], M[mask_state_no_turing], s=8, alpha=0.50, label="stan stabilny")
-    ax.scatter(A[mask_turing], M[mask_turing], s=12, alpha=0.9, label="obszar Turinga")
+    ax.scatter(a_array[mask_no_state], m_array[mask_no_state], s=8, alpha=0.35, label="brak stanu")
+    ax.scatter(a_array[mask_state_no_turing], m_array[mask_state_no_turing], s=8, alpha=0.50, label="stan stabilny")
+    ax.scatter(a_array[mask_turing], m_array[mask_turing], s=12, alpha=0.9, label="obszar Turinga")
 
     ax.set_xlabel("a")
     ax.set_ylabel("m")
-    ax.set_title("Mapa stanów w płaszczyźnie (a, m)")
+    ax.set_title("State map in the (a, m) plane")
     ax.legend()
     ax.grid(True, alpha=0.3)
 
 def a_m_pairs(results, m_values):
+    """
+        For each value of ``m``, extracts characteristic ``a`` values
+        associated with the Turing region.
+
+        Returns a list of dictionaries containing:
+        - the point with the largest ``lambda_max``,
+        - a selected band of strong Turing points.
+        """
     out = []
 
     for m in m_values:
-        dane_m = []
+        data_for_m = []
 
         # zbieramy tylko punkty z tym m i has_turing = 1
         for r in results:
@@ -345,47 +399,48 @@ def a_m_pairs(results, m_values):
                     and np.isfinite(r["lambda_max"])
                     and r["lambda_max"] > 0
             ):
-                dane_m.append(r)
+                data_for_m.append(r)
 
         # jeśli brak punktów Turinga dla tego m
-        if len(dane_m) == 0:
-            out.append({
+        if len(data_for_m) == 0:
+            out.append(
+                {
                 "m": m,
                 "a_max": np.nan,
                 "lambda_max": np.nan,
                 "a_mean": np.nan,
                 "lambda_mean_like": np.nan
-            })
+                }
+            )
             continue
 
-        # maksimum lambda
-        best = dane_m[0]
-        for r in dane_m:
-            if r["lambda_max"] > best["lambda_max"]:
-                best = r
+        best_result = data_for_m[0]
+        for result in data_for_m:
+            if result["lambda_max"] > best_result["lambda_max"]:
+                best_result = result
 
+        lambda_max_val = best_result["lambda_max"]
+        strong_data = []
 
-        # CZĘŚĆ Z WYBOREM PUNKTÓW
-        lambda_max_val = best["lambda_max"]
-        dane_strong = []
+        for result in data_for_m:
+            if result["lambda_max"] >= 0.25 * lambda_max_val:
+                strong_data.append(result)
 
-        for r in dane_m:
-            if r["lambda_max"] >= 0.25 * lambda_max_val:
-                dane_strong.append(r)
+        if len(strong_data) == 0:
+            strong_data = data_for_m
 
-        if len(dane_strong) == 0:
-            dane_strong = dane_m
+        strong_data = sorted(strong_data, key=lambda result: result["a"])
+        a_band = [result["a"] for result in strong_data]
+        lambda_band = [result["lambda_max"] for result in strong_data]
 
-        dane_strong = sorted(dane_strong, key=lambda r: r["a"])
-        a_band = [r["a"] for r in dane_strong]
-        lambda_band = [r["lambda_max"] for r in dane_strong]
-
-        out.append({
+        out.append(
+            {
             "m": m,
-            "a_max": best["a"],
-            "lambda_max": best["lambda_max"],
+            "a_max": best_result["a"],
+            "lambda_max": best_result["lambda_max"],
             "a_band": a_band,
             "lambda_band": lambda_band,
-        })
+            }
+        )
 
     return out
