@@ -179,3 +179,22 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# VS Code
+.vscode/
+
+# Local experiment outputs
+data/wykresy_bez_etykiet/
+data/wykresy_etykiety/
+data/wykresy_etykiety_csv/
+
+# Optional: ignore generated binary/data files everywhere
+*.npz
+*.npy
+
+# Optional logs/results
+*.out
