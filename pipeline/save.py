@@ -4,8 +4,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pipeline.patterns import simulate_patterns, plot_matrix, cmap_v
 
-
-# Generating and saving matrices
+# --------------------------------------
+# Generating and saving matrices as .npz
+# --------------------------------------
 def save_as_npz(
         file_name,
         a_vector,
@@ -67,7 +68,7 @@ def save_as_npz(
     old_settings = np.seterr(over='ignore', invalid='ignore', divide='ignore') #ignore
 
     try:
-        for i in range(length):  # symulacja dla kolejnych parametrow
+        for i in range(length):
             try:
                 u, v = simulate_patterns(
                     a_vector[i],
@@ -85,10 +86,9 @@ def save_as_npz(
 
                 if (not np.all(np.isfinite(u))) or (not np.all(np.isfinite(v))):
                     if verbose:
-                        print(f"Pomijam i={i}: wynik ma NaN/inf")
+                        print(f"Skipping i={i}: result has NaN/inf")
                     continue
 
-                # chcemy macierze czy wektory? obie czy v?
                 U.append(u)
                 V.append(v)
                 a_ok.append(a_vector[i])
@@ -99,7 +99,6 @@ def save_as_npz(
             except Exception as e:
                 if verbose:
                     print(
-                        f"Błąd dla i={i}, a={a_vector[i]}, m={m_vector[i]}, "
                         f"Error for i={i}, a={a_vector[i]}, m={m_vector[i]}, "
                         f"d1={d1_vector[i]}, d2={d2_vector[i]}: {e}"
                     )
@@ -107,10 +106,10 @@ def save_as_npz(
     finally:
         np.seterr(**old_settings)
 
-    sciezka = os.path.join(folder, f"{file_name}.npz")
+    path = os.path.join(folder, f"{file_name}.npz")
 
     np.savez_compressed(
-        sciezka,
+        path,
         U=np.array(U),
         V=np.array(V),
         a=np.array(a_ok),
@@ -123,8 +122,9 @@ def save_as_npz(
     if verbose:
         print("Saving complete.")
 
-
-# Defining the patterns from npz file by hand
+# --------------------------------------------
+# Manually defining the patterns from npz file
+# --------------------------------------------
 def define_patterns(file_name, folder="wykresy_etykiety", folder_old="wykresy_bez_etykiet", cmap=None):
     """
     Interactively labels Turing patterns and saves back to an .npz file.
@@ -138,13 +138,10 @@ def define_patterns(file_name, folder="wykresy_etykiety", folder_old="wykresy_be
     Parameters
     file_name : str
         The name of the .npz file to load (without extension).
-
     folder : str, optional
         The destination directory. Default: "wykresy_etykiety".
-
     folder_old : str, optional
         The source directory. Default is "wykresy_bez_etykiet".
-
     cmap : matplotlib.colors.Colormap, optional
         Colormap used for displaying the matrices. Defaults to the globally defined 'cmap_v'.
 
@@ -155,21 +152,21 @@ def define_patterns(file_name, folder="wykresy_etykiety", folder_old="wykresy_be
     our_path = os.path.join(folder_old, f"{file_name}.npz")
 
     with np.load(our_path, allow_pickle=True) as loader:
-        dane = dict(loader)
+        data = dict(loader)
 
     if cmap is None:
         cmap = cmap_v
 
-    length = len(dane["V"])
-    patterns = dane["patterns"].copy()
+    length = len(data["V"])
+    patterns = data["patterns"].copy()
 
     for i in range(length):
-        # pomijamy te, które już mają etykiete
+        # skipping ones with label
         if patterns[i] != -1:
             continue
 
         title = f"{file_name}, i={i}"
-        plot_matrix(dane["V"][i], plot_title=title, show=False, cmap=cmap)
+        plot_matrix(data["V"][i], plot_title=title, show=False, cmap=cmap)
 
         ans = input("0. nothing, 1. spots, 2. stripes, 3. labyrinths, 4. gaps, 5. something else (d=delete)(q=quit): ")
 
@@ -192,9 +189,8 @@ def define_patterns(file_name, folder="wykresy_etykiety", folder_old="wykresy_be
     keep_mask = patterns < 99
 
     for key in ["U", "V", "a", "m", "d1", "d2"]:
-        dane[key] = dane[key][keep_mask]
+        data[key] = data[key][keep_mask]
 
-    dane["patterns"] = patterns[keep_mask]
     data["patterns"] = patterns[keep_mask]
 
     print(f"Deleted {np.sum(~keep_mask)}/{length} matrices.")
@@ -202,31 +198,58 @@ def define_patterns(file_name, folder="wykresy_etykiety", folder_old="wykresy_be
 
     os.makedirs(folder, exist_ok=True)
     output_path = os.path.join(folder, f"{file_name}.npz")
-    np.savez_compressed(output_path, **dane)
+    np.savez_compressed(output_path, **data)
 
-    length = len(dane["patterns"])
-    stayed = sum(1 for x in dane["patterns"] if x != -1)
+    length = len(data["patterns"])
+    stayed = sum(1 for x in data["patterns"] if x != -1)
     print(f"End of file. Patterns are defined on {stayed}/{length} matrices.")
     print(f"File saved to: {output_path}")
 
+# --------------------------------------------
+# Conversion of parameters and patterns to csv
+# --------------------------------------------
+def convert_to_csv(
+        npz_file_name,
+        input_folder="wykresy_etykiety",
+        output_folder="wykresy_etykiety_csv"
+):
+    """
+        Loads a labeled .npz file from input_folder and creates its reduced .csv
+        version in output_folder. The original .npz file is left unchanged.
 
-# konwersja do csv z (samych parametrów)
-def convert_to_csv(npz_file_name):
-    dane = np.load(f"{npz_file_name}.npz", allow_pickle=True)
+        Parameters
+        npz_file_name : str
+            File name without extension.
+        input_folder : str, optional
+            Folder containing the source .npz file.
+            Default: "wykresy_etykiety".
+        output_folder : str, optional
+            Folder where the .csv file will be saved.
+            Default: "csv_etykiety".
 
-    # Tworzymy słownik tylko z tych danych, które chcemy w tabeli
-    tabela = {
-        'a': dane['a'],
-        'm': dane['m'],
-        'd1': dane['d1'],
-        'd2': dane['d2'],
-        'pattern': dane['patterns']
-    }
+        Returns
+        pd.DataFrame
+            DataFrame containing only parameters and pattern labels.
+        """
+    input_path = os.path.join(input_folder, f"{npz_file_name}.npz")
+    output_path = os.path.join(output_folder, f"{npz_file_name}.csv")
 
-    df = pd.DataFrame(tabela)
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"There is no file: {input_path}")
 
-    output_name = f"{npz_file_name}.csv"
-    df.to_csv(output_name, index=False)
+    os.makedirs(output_folder, exist_ok=True)
 
-    print(f"Tabela została zapisana do pliku: {output_name}.")
+    with np.load(input_path, allow_pickle=True) as data:
+        table = {
+            'a': data['a'],
+            'm': data['m'],
+            'd1': data['d1'],
+            'd2': data['d2'],
+            'pattern': data['patterns']
+        }
+
+    df = pd.DataFrame(table)
+    df.to_csv(output_path, index=False)
+
+    print(f"CSV saved to: {output_path}")
     return df
