@@ -4,6 +4,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pipeline.patterns import simulate_patterns, plot_matrix, cmap_v
 
+# Main folder for labelling plots
+DATA_DIR = "data"
+
+# Subfolders
+RAW_PATTERNS_DIR = os.path.join(DATA_DIR, "wykresy_bez_etykiet")
+LABELED_PATTERNS_DIR = os.path.join(DATA_DIR, "wykresy_etykiety")
+CSV_PATTERNS_DIR = os.path.join(DATA_DIR, "wykresy_etykiety_csv")
+
 # --------------------------------------
 # Generating and saving matrices as .npz
 # --------------------------------------
@@ -19,7 +27,7 @@ def save_as_npz(
         ny=100,
         T=10000,
         ht=0.025,
-        folder="wykresy_bez_etykiet",
+        folder=RAW_PATTERNS_DIR,
         verbose=False,
 ):
     """
@@ -125,7 +133,12 @@ def save_as_npz(
 # --------------------------------------------
 # Manually defining the patterns from npz file
 # --------------------------------------------
-def define_patterns(file_name, folder="wykresy_etykiety", folder_old="wykresy_bez_etykiet", cmap=None):
+def define_patterns(
+        file_name, 
+        folder=LABELED_PATTERNS_DIR, 
+        folder_old=RAW_PATTERNS_DIR, 
+        cmap=None
+):
     """
     Interactively labels Turing patterns and saves back to an .npz file.
 
@@ -210,8 +223,8 @@ def define_patterns(file_name, folder="wykresy_etykiety", folder_old="wykresy_be
 # --------------------------------------------
 def convert_to_csv(
         npz_file_name,
-        input_folder="wykresy_etykiety",
-        output_folder="wykresy_etykiety_csv"
+        input_folder=LABELED_PATTERNS_DIR,
+        output_folder=CSV_PATTERNS_DIR
 ):
     """
         Loads a labeled .npz file from input_folder and creates its reduced .csv
