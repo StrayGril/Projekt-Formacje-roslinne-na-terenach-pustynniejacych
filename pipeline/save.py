@@ -70,6 +70,13 @@ def save_as_npz(
     m_ok = []
     d1_ok = []
     d2_ok = []
+    T_end_ok = []
+    mean_v_0_ok = []
+    var_v_0_ok = []
+    max_v_0_ok = []
+    mean_v_T_ok = []
+    var_v_T_ok = []
+    max_v_T_ok = []
 
     os.makedirs(folder, exist_ok=True)
 
@@ -78,7 +85,7 @@ def save_as_npz(
     try:
         for i in range(length):
             try:
-                u, v = simulate_patterns(
+                sim_data = simulate_patterns(
                     a_vector[i],
                     m_vector[i],
                     d1_vector[i],
@@ -89,9 +96,13 @@ def save_as_npz(
                     ny=ny,
                     T=T,
                     ht=ht,
-                    return_matrices=True
+                    return_matrices=False
                 )
-
+                    
+                u = sim_data["uT"].reshape(ny, nx)
+                v = sim_data["vT"].reshape(ny, nx)
+                T_end = sim_data["last_step"]
+                    
                 if (not np.all(np.isfinite(u))) or (not np.all(np.isfinite(v))):
                     if verbose:
                         print(f"Skipping i={i}: result has NaN/inf")
@@ -103,6 +114,16 @@ def save_as_npz(
                 m_ok.append(m_vector[i])
                 d1_ok.append(d1_vector[i])
                 d2_ok.append(d2_vector[i])
+
+                T_end_ok.append(sim_data["last_step"])
+
+                mean_v_0_ok.append(sim_data["mean_v_0"])
+                var_v_0_ok.append(sim_data["var_v_0"])
+                max_v_0_ok.append(sim_data["max_v_0"])
+
+                mean_v_T_ok.append(sim_data["mean_v_T"])
+                var_v_T_ok.append(sim_data["var_v_T"])
+                max_v_T_ok.append(sim_data["max_v_T"])
 
             except Exception as e:
                 if verbose:
